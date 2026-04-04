@@ -105,5 +105,3 @@ You will immediately see 🛵 scooters tracking live along the streets of Hydera
 
 ---
 
-## 🚀 Resume-Ready Description
-> Built a highly scalable real-time delivery tracking system using Apache Kafka and Node.js. Ingested live streaming GPS coordinates from an OSRM-integrated Python simulator utilizing event-driven microservices. Tracked state changes with MongoDB and rendered real-world, high-frequency map visualizations via WebSockets and Leaflet.js.
