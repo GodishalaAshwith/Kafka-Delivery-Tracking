@@ -43,16 +43,12 @@ async function startTracking() {
                 return;
             }
 
-            // Prevent screen from sleeping if supported
             try {
                 if ('wakeLock' in navigator) {
                     wakeLock = await navigator.wakeLock.request('screen');
-                    wakeLock.addEventListener('release', () => {
-                        console.log('Screen Wake Lock was released');
-                    });
                 }
             } catch (err) {
-                console.error(`${err.name}, ${err.message}`);
+                console.error(`WakeLock error: ${err.message}`);
             }
 
             document.getElementById("startBtn").style.display = "none";
@@ -97,8 +93,7 @@ async function startTracking() {
                 watchId = null;
             }
             if (wakeLock !== null) {
-                wakeLock.release()
-                    .then(() => wakeLock = null);
+                wakeLock.release().then(() => wakeLock = null).catch(e => console.error(e));
             }
             document.getElementById("startBtn").style.display = "inline-block";
             document.getElementById("stopBtn").style.display = "none";

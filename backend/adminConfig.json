@@ -1,0 +1,18 @@
+{
+  "simulationEnabled": false,
+  "realRidersEnabled": true,
+  "simulatedRiders": {
+    "rider_1": {
+      "name": "",
+      "active": false
+    },
+    "rider_2": {
+      "name": "",
+      "active": false
+    },
+    "rider_3": {
+      "name": "",
+      "active": false
+    }
+  }
+}

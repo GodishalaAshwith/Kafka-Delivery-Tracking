@@ -55,7 +55,7 @@
                     .bindTooltip(`<b>${displayName}</b>`, { permanent: true, direction: 'right', offset: [15, 0], className: 'rider-label' })
                     .openTooltip();
 
-                // Automatically zoom map out to include the new distant rider
+                // Group all markers and smoothly zoom out if a distant rider is added
                 const group = new L.featureGroup(Object.values(markers));
                 map.fitBounds(group.getBounds(), { padding: [50, 50], maxZoom: 15 });
             }

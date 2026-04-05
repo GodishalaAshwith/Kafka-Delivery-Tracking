@@ -83,9 +83,22 @@ let adminConfig = {
 // Load from file if exists to persist settings
 if (fs.existsSync(CONFIG_FILE)) {
     try {
-        adminConfig = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+        const fileContent = fs.readFileSync(CONFIG_FILE, 'utf8');
+        if (fileContent.trim()) {
+            const parsedConfig = JSON.parse(fileContent);
+            // Verify everything defaults to ON if missing fields
+            adminConfig = {
+                simulationEnabled: parsedConfig.simulationEnabled ?? true,
+                realRidersEnabled: parsedConfig.realRidersEnabled ?? true,
+                simulatedRiders: {
+                    "rider_1": parsedConfig.simulatedRiders?.rider_1 ?? { name: "John (Charminar)", active: true },
+                    "rider_2": parsedConfig.simulatedRiders?.rider_2 ?? { name: "Alice (HITEC City)", active: true },
+                    "rider_3": parsedConfig.simulatedRiders?.rider_3 ?? { name: "Bob (Nampally)", active: true }
+                }
+            };
+        }
     } catch (e) {
-        console.error("Error reading adminConfig.json:", e);
+        console.error("Error reading adminConfig.json, falling back to defaults:", e);
     }
 }
 
@@ -96,7 +109,11 @@ app.get('/api/admin/config', (req, res) => {
 
 app.post('/api/admin/config', (req, res) => {
     adminConfig = { ...adminConfig, ...req.body };
-    fs.writeFileSync(CONFIG_FILE, JSON.stringify(adminConfig, null, 2));
+    try {
+        fs.writeFileSync(CONFIG_FILE, JSON.stringify(adminConfig, null, 2));
+    } catch (e) {
+        console.error("Failed to save config:", e);
+    }
     io.emit('config-updated', adminConfig); // Tell frontend to hard refresh if needed
     res.json({ success: true, adminConfig });
 });
