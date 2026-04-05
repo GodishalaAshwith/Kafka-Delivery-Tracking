@@ -136,16 +136,20 @@ async function runKafka() {
         const data = JSON.parse(message.value.toString());
         console.log("Received:", data);
 
-        // 1. Store in DB
-        await RiderLocation.create({
-          rider_id: data.rider_id,
-          lat: data.location.lat,
-          lng: data.location.lng,
-          timestamp: data.timestamp
-        });
-
-        // 2. Send via WebSocket
+        // 1. Send via WebSocket
         io.emit("rider-location-update", data);
+
+        // 2. Store in DB (Non-blocking so tracking still works if DB fails)
+        try {
+          await RiderLocation.create({
+            rider_id: data.rider_id,
+            lat: data.location.lat,
+            lng: data.location.lng,
+            timestamp: data.timestamp
+          });
+        } catch (dbErr) {
+          console.error("DB Insert Error:", dbErr.message);
+        }
       } catch (err) {
         console.error("Error processing message:", err);
       }
