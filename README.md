@@ -106,14 +106,38 @@ You will immediately see üõµ scooters tracking live along the streets of Hydera
 ---
 
 
-## Ìºç Exposing to the Internet (100% Free via Ngrok)
-Instead of paying for managed Kafka Cloud providers to track your real phone remotely, you can use **Ngrok** to securely tunnel your local Node.js Server to the web!
+## üåç Exposing to the Internet (Ngrok + Vercel Deployment)
 
-1. Download [Ngrok](https://ngrok.com/) for Windows.
-2. In a terminal, expose your Node.js Backend port:
+To track a real mobile phone on 4G/5G and view the live dashboard from anywhere, we use a hybrid deployment architecture:
+- **Frontend**: Hosted on [Vercel](https://vercel.com) (Static HTML/JS).
+- **Backend / Kafka**: Hosted locally on your machine, tunneled securely to the internet via **Ngrok**.
+
+### 1. Tunnel your Local Backend
+1. Download and authenticate [Ngrok](https://download.ngrok.com/) on your backend machine.
+2. In a terminal, expose your Node.js Backend port (default `3001`):
    ```bash
    ngrok http 3001
    ```
-3. Ngrok will output a Forwarding URL (e.g., `https://abc-123.ngrok-free.app`). 
-4. Paste that exact URL as the `DEPLOYED_URL` in `frontend/config.js`.
-5. Send the `frontend/mobile-tracker.html` file to your smartphone and start tracking. Your real-world movements will stream directly into your local Kafka broker!
+3. Copy the output `Forwarding URL` (e.g., `https://vannesa-unflaked-zoraida.ngrok-free.dev`).
+
+### 2. Configure the Frontend
+1. Open `frontend/config.js`.
+2. Update the `DEPLOYED_URL` variable to your new Ngrok URL:
+   ```javascript
+   const DEPLOYED_URL = "https://<your-ngrok-id>.ngrok-free.dev";
+   const BACKEND_URL = DEPLOYED_URL;
+   ```
+3. **Commit and push** your changes to GitHub.
+
+### 3. Deploy Frontend to Vercel
+1. Go to [Vercel](https://vercel.com) and import your GitHub repository.
+2. Set the "Framework Preset" to **Other** and the "Root Directory" to `frontend`.
+3. Click **Deploy**. Your frontend is now available globally!
+
+*(Note: Ngrok's free tier shows an interstitial browser warning screen when visiting a URL. The frontend architecture automatically injects the HTTP Header `"ngrok-skip-browser-warning": "69420"` into all Socket.io & Fetch requests to silently bypass this block without needing a paid Ngrok account).*
+
+### 4. Track Your Real Phone!
+1. Start your `server.js` and your Ngrok tunnel on your laptop.
+2. Open your Vercel deployment URL on your smartphone (e.g., `https://kafka-delivery-tracking.vercel.app/mobile-tracker.html`).
+3. Enter your assigned `Rider ID` and press **Start Tracking Me**.
+4. Open the map dashboard (`index.html` on Vercel) on your laptop or another device, and watch your real-world movements stream directly into your local Kafka broker!
