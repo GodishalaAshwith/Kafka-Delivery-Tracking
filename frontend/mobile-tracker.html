@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Real Rider Tracker</title>
+    <style>
+        body { font-family: sans-serif; text-align: center; padding: 20px; background-color: #f7f9fc; }
+        .btn { padding: 15px 30px; font-size: 18px; border-radius: 8px; border: none; cursor: pointer; color: white;     }
+        .start { background-color: #28a745; }
+        .stop { background-color: #dc3545; display: none; }
+        #status { margin-top: 20px; font-size: 18px; color: #333; }
+        input { font-size: 18px; padding: 10px; margin-bottom: 20px; width: 80%; border-radius: 5px; border: 1px solid #ccc; text-align: center; }
+    </style>
+</head>
+<body>
+
+    <h1>🛵 Real Phone Tracker</h1>
+    <input type="text" id="riderId" placeholder="Enter Rider ID (e.g. rider_real_1)" value="rider_real_1">
+
+    <button id="startBtn" class="btn start" onclick="startTracking()">Start Tracking Me</button>
+    <button id="stopBtn" class="btn stop" onclick="stopTracking()">Stop Tracking</button>
+
+    <div id="status">Ready to track...</div>
+
+    <script>
+        let watchId = null;
+
+        function startTracking() {
+            if (!("geolocation" in navigator)) {
+                alert("Geolocation is not supported by your browser");
+                return;
+            }
+
+            const riderId = document.getElementById("riderId").value;
+            if (!riderId) {
+                alert("Please enter a Rider ID first!");
+                return;
+            }
+
+            document.getElementById("startBtn").style.display = "none";
+            document.getElementById("stopBtn").style.display = "inline-block";
+            document.getElementById("status").innerText = "Waiting for GPS signal...";
+
+            // Use HTML5 Geolocation to live-track the user's phone
+            watchId = navigator.geolocation.watchPosition(
+                async (position) => {
+                    const lat = position.coords.latitude;
+                    const lng = position.coords.longitude;
+                    
+                    document.getElementById("status").innerHTML = `<b>Live:</b> Lat: ${lat.toFixed(5)}, Lng: ${lng.toFixed(5)}`;
+
+                    // Send the real coordinate to your Node.js Backend API
+                    try {
+                        await fetch("http://localhost:3001/api/track", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ rider_id: riderId, lat, lng })
+                        });
+                    } catch (error) {
+                        console.error("Error sending GPS data to backend:", error);
+                    }
+                },
+                (error) => {
+                    console.error("GPS Error:", error);
+                    document.getElementById("status").innerText = `GPS Error: ${error.message}`;
+                },
+                { enableHighAccuracy: true, maximumAge: 0 } // Request best GPS hardware accuracy
+            );
+        }
+
+        function stopTracking() {
+            if (watchId !== null) {
+                navigator.geolocation.clearWatch(watchId);
+                watchId = null;
+            }
+            document.getElementById("startBtn").style.display = "inline-block";
+            document.getElementById("stopBtn").style.display = "none";
+            document.getElementById("status").innerText = "Tracking Stopped. No longer sending to Kafka.";
+        }
+    </script>
+</body>
+</html>

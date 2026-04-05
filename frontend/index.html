@@ -10,6 +10,7 @@
     <style>
         #map { height: 100vh; width: 100%; margin: 0; padding: 0; }
         body { margin: 0; }
+        .rider-label { font-size: 14px; font-weight: bold; border-radius: 4px; box-shadow: 0 2px 5px rgba(0,0,0,0.2) !important; border: 2px solid #ccc; }
     </style>
 </head>
 <body>
@@ -34,15 +35,36 @@
         });
 
         socket.on('rider-location-update', (data) => {
-            const { rider_id, location } = data;
+            const { rider_id, location, name } = data;
+            const displayName = name || rider_id; // Default back to ID if name is missing
             
             if (markers[rider_id]) {
                 markers[rider_id].setLatLng([location.lat, location.lng]);
+                // Tooltips are permanent, so they auto-update without needing to click
+                markers[rider_id].setTooltipContent(`<b>${displayName}</b>`);
             } else {
                 markers[rider_id] = L.marker([location.lat, location.lng], { icon: riderIcon })
                     .addTo(map)
-                    .bindPopup(`<b>${rider_id}</b>`)
-                    .openPopup();
+                    .bindTooltip(`<b>${displayName}</b>`, { permanent: true, direction: 'right', offset: [15, 0], className: 'rider-label' })
+                    .openTooltip();
+            }
+        });
+
+        // Listen for Admin config updates to remove disabled riders dynamically
+        socket.on('config-updated', (config) => {
+            if (!config.simulationEnabled) {
+                // If Simulation totally disabled, clear all markers except Real ones
+                Object.keys(markers).forEach(id => {
+                   if (!id.includes('real')) { map.removeLayer(markers[id]); delete markers[id]; }
+                });
+            } else {
+                // Remove individual disabled riders
+                Object.keys(config.simulatedRiders).forEach(id => {
+                    if (!config.simulatedRiders[id].active && markers[id]) {
+                        map.removeLayer(markers[id]);
+                        delete markers[id];
+                    }
+                });
             }
         });
     </script>

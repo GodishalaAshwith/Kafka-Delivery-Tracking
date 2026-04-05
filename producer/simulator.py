@@ -34,9 +34,28 @@ progress = { "rider_1": 0, "rider_2": 0, "rider_3": 0 }
 riders = ["rider_1", "rider_2", "rider_3"]
 
 print("Starting realistic rider simulator...")
-
 while True:
+    try:
+        # Fetch the live admin configuration on every loop
+        admin_config = requests.get("http://localhost:3001/api/admin/config").json()
+    except Exception as e:
+        print(f"Waiting for backend... ({e})")
+        time.sleep(2)
+        continue
+
+    if not admin_config.get("simulationEnabled", False):
+        print("Simulation is globally disabled by Admin.")
+        time.sleep(2)
+        continue
+
+    sim_riders = admin_config.get("simulatedRiders", {})
+
     for rider in riders:
+        # Only simulate riders that are explicitly active in the admin config
+        rider_config = sim_riders.get(rider, {})
+        if not rider_config.get("active", False):
+            continue
+
         route = routes[rider]
         current_idx = progress[rider]
         
@@ -49,11 +68,12 @@ while True:
         
         data = {
             "rider_id": rider,
+            "name": rider_config.get("name", rider),
             "location": current_location,
             "timestamp": time.time()
         }
         producer.send("rider-location", value=data)
-        print("Sent:", data)
+        print(f"Sent ({data['name']}):", data)
         
         # Move rider forward by 1 step every interval
         progress[rider] += 1
