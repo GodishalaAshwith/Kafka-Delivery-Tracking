@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Delivery Tracking Admin Panel</title>
+    <script src="config.js"></script>
     <style>
         body { font-family: Arial, sans-serif; background: #f4f7f6; padding: 20px; color: #333; }
         .card { background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; max-width: 600px; margin: auto; }
@@ -59,7 +60,7 @@
 <script>
     // Fetch initial config and populate form
     let initialConfig = {};
-    fetch('http://localhost:3001/api/admin/config')
+    fetch(`${BACKEND_URL}/api/admin/config`)
         .then(res => res.json())
         .then(config => {
             initialConfig = config;
@@ -88,7 +89,7 @@
             }
         };
 
-        fetch('http://localhost:3001/api/admin/config', {
+        fetch(`${BACKEND_URL}/api/admin/config`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)

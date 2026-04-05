@@ -1,12 +1,30 @@
 from kafka import KafkaProducer
-import json, time, random
+import json, time, random, os
 import requests
 import polyline
+from dotenv import load_dotenv
 
-producer = KafkaProducer(
-    bootstrap_servers='localhost:9092',
-    value_serializer=lambda v: json.dumps(v).encode('utf-8')
-)
+load_dotenv() # Load variables from .env
+
+# --- CLOUD CONFIGURATION ---
+KAFKA_BROKERS = os.getenv("KAFKA_BROKERS", "localhost:9092")
+KAFKA_USERNAME = os.getenv("KAFKA_USERNAME")
+KAFKA_PASSWORD = os.getenv("KAFKA_PASSWORD")
+BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:3001")
+
+producer_config = {
+    'bootstrap_servers': KAFKA_BROKERS,
+    'value_serializer': lambda v: json.dumps(v).encode('utf-8')
+}
+
+# Add Secure SASL configuration if running in Confluent Cloud
+if KAFKA_USERNAME and KAFKA_PASSWORD:
+    producer_config['security_protocol'] = 'SASL_SSL'
+    producer_config['sasl_mechanism'] = 'PLAIN'
+    producer_config['sasl_plain_username'] = KAFKA_USERNAME
+    producer_config['sasl_plain_password'] = KAFKA_PASSWORD
+
+producer = KafkaProducer(**producer_config)
 
 # Fetch a real route from OSRM (Open Source Routing Machine)
 def get_route(start, end):
@@ -37,9 +55,9 @@ print("Starting realistic rider simulator...")
 while True:
     try:
         # Fetch the live admin configuration on every loop
-        admin_config = requests.get("http://localhost:3001/api/admin/config").json()
+        admin_config = requests.get(f"{BACKEND_URL}/api/admin/config").json()
     except Exception as e:
-        print(f"Waiting for backend... ({e})")
+        print(f"Waiting for backend at {BACKEND_URL}... ({e})")
         time.sleep(2)
         continue
 

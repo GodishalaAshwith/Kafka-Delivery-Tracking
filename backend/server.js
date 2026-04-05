@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -6,7 +7,15 @@ const { Kafka } = require('kafkajs');
 const cors = require('cors');
 
 const app = express();
-app.use(cors());
+
+// Since phones on 4G/5G hit the ngrok URL, we need to allow them explicitly
+// Note: Ngrok's weird "Skip Browser Warning" header must be allowed!
+app.use(cors({
+    origin: '*',
+    methods: ['GET', 'POST'],
+    allowedHeaders: ['Content-Type', 'ngrok-skip-browser-warning']
+}));
+
 app.use(express.json()); // Parse JSON requests from mobile trackers
 
 const server = http.createServer(app);
@@ -23,17 +32,28 @@ const RiderLocationSchema = new mongoose.Schema({
 const RiderLocation = mongoose.model('RiderLocation', RiderLocationSchema);
 
 // Connect to MongoDB
-mongoose.connect('mongodb://localhost:27017/tracking-app', {
+mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/tracking-app', {
   useNewUrlParser: true,
   useUnifiedTopology: true
 }).then(() => console.log('MongoDB connected'))
   .catch(console.error);
 
 // Kafka Consumer setup
-const kafka = new Kafka({
+const kafkaConfig = {
   clientId: 'tracking-app',
-  brokers: ['localhost:9092']
-});
+  brokers: (process.env.KAFKA_BROKERS || 'localhost:9092').split(',')
+};
+
+if (process.env.KAFKA_USERNAME && process.env.KAFKA_PASSWORD) {
+  kafkaConfig.ssl = true;
+  kafkaConfig.sasl = {
+    mechanism: 'plain', // Confluent Cloud usually requires plain
+    username: process.env.KAFKA_USERNAME,
+    password: process.env.KAFKA_PASSWORD
+  };
+}
+
+const kafka = new Kafka(kafkaConfig);
 
 const producer = kafka.producer();
 const consumer = kafka.consumer({ groupId: 'tracking-group' });

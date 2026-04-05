@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Real Rider Tracker</title>
+    <script src="config.js"></script>
     <style>
         body { font-family: sans-serif; text-align: center; padding: 20px; background-color: #f7f9fc; }
         .btn { padding: 15px 30px; font-size: 18px; border-radius: 8px; border: none; cursor: pointer; color: white;     }
@@ -52,11 +53,16 @@
 
                     // Send the real coordinate to your Node.js Backend API
                     try {
-                        await fetch("http://localhost:3001/api/track", {
+                        const response = await fetch(`${BACKEND_URL}/api/track`, {
                             method: "POST",
-                            headers: { "Content-Type": "application/json" },
-                            body: JSON.stringify({ rider_id: riderId, lat, lng })
+                            // Added "ngrok-skip-browser-warning" so our fetch API call is not blocked by Ngrok's free tier warning page
+                            headers: { 
+                                "Content-Type": "application/json",
+                                "ngrok-skip-browser-warning": "69420"
+                            },
+                            body: JSON.stringify({ rider_id: riderId, name: riderName, lat, lng })
                         });
+                        console.log("Sent coords to Ngrok:", response.status);
                     } catch (error) {
                         console.error("Error sending GPS data to backend:", error);
                     }

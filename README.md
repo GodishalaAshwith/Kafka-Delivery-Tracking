@@ -105,3 +105,15 @@ You will immediately see üõµ scooters tracking live along the streets of Hydera
 
 ---
 
+
+## Ìºç Exposing to the Internet (100% Free via Ngrok)
+Instead of paying for managed Kafka Cloud providers to track your real phone remotely, you can use **Ngrok** to securely tunnel your local Node.js Server to the web!
+
+1. Download [Ngrok](https://ngrok.com/) for Windows.
+2. In a terminal, expose your Node.js Backend port:
+   ```bash
+   ngrok http 3001
+   ```
+3. Ngrok will output a Forwarding URL (e.g., `https://abc-123.ngrok-free.app`). 
+4. Paste that exact URL as the `DEPLOYED_URL` in `frontend/config.js`.
+5. Send the `frontend/mobile-tracker.html` file to your smartphone and start tracking. Your real-world movements will stream directly into your local Kafka broker!
