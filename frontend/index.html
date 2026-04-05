@@ -25,7 +25,13 @@
         }).addTo(map);
 
         const markers = {};
-        const socket = io(BACKEND_URL);
+        
+        // Pass ExtraHeaders so Socket.io polling isn't blocked by Ngrok's free tier
+        const socket = io(BACKEND_URL, {
+            extraHeaders: {
+                "ngrok-skip-browser-warning": "69420"
+            }
+        });
 
         const riderIcon = L.divIcon({
             html: '<div style="font-size: 30px; filter: drop-shadow(2px 2px 3px rgba(0,0,0,0.5));">🛵</div>',

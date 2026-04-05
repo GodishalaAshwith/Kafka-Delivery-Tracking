@@ -19,7 +19,15 @@ app.use(cors({
 app.use(express.json()); // Parse JSON requests from mobile trackers
 
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*" } });
+
+// Update Socket.io to allow Cross-Origin requests from Vercel (or any other domain)
+const io = new Server(server, { 
+    cors: { 
+        origin: "*",
+        methods: ["GET", "POST"],
+        allowedHeaders: ["ngrok-skip-browser-warning"]
+    } 
+});
 
 // Mongoose schema definition
 const RiderLocationSchema = new mongoose.Schema({
