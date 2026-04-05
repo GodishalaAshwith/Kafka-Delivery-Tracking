@@ -60,7 +60,7 @@
                                 "Content-Type": "application/json",
                                 "ngrok-skip-browser-warning": "69420"
                             },
-                            body: JSON.stringify({ rider_id: riderId, name: riderName, lat, lng })
+                            body: JSON.stringify({ rider_id: riderId, name: riderId, lat, lng })
                         });
                         console.log("Sent coords to Ngrok:", response.status);
                     } catch (error) {
