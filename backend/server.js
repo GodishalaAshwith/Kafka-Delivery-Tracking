@@ -5,6 +5,8 @@ const { Server } = require('socket.io');
 const mongoose = require('mongoose');
 const { Kafka } = require('kafkajs');
 const cors = require('cors');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 
@@ -66,7 +68,8 @@ const kafka = new Kafka(kafkaConfig);
 const producer = kafka.producer();
 const consumer = kafka.consumer({ groupId: 'tracking-group' });
 
-// Global Admin Configuration State (In-Memory for Demo)
+// Global Admin Configuration State
+const CONFIG_FILE = path.join(__dirname, 'adminConfig.json');
 let adminConfig = {
     simulationEnabled: true,
     realRidersEnabled: true,
@@ -77,6 +80,15 @@ let adminConfig = {
     }
 };
 
+// Load from file if exists to persist settings
+if (fs.existsSync(CONFIG_FILE)) {
+    try {
+        adminConfig = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+    } catch (e) {
+        console.error("Error reading adminConfig.json:", e);
+    }
+}
+
 // Admin Endpoints
 app.get('/api/admin/config', (req, res) => {
     res.json(adminConfig);
@@ -84,6 +96,7 @@ app.get('/api/admin/config', (req, res) => {
 
 app.post('/api/admin/config', (req, res) => {
     adminConfig = { ...adminConfig, ...req.body };
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(adminConfig, null, 2));
     io.emit('config-updated', adminConfig); // Tell frontend to hard refresh if needed
     res.json({ success: true, adminConfig });
 });

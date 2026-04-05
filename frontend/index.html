@@ -54,6 +54,10 @@
                     .addTo(map)
                     .bindTooltip(`<b>${displayName}</b>`, { permanent: true, direction: 'right', offset: [15, 0], className: 'rider-label' })
                     .openTooltip();
+
+                // Automatically zoom map out to include the new distant rider
+                const group = new L.featureGroup(Object.values(markers));
+                map.fitBounds(group.getBounds(), { padding: [50, 50], maxZoom: 15 });
             }
         });
 

@@ -23,11 +23,15 @@
     <button id="stopBtn" class="btn stop" onclick="stopTracking()">Stop Tracking</button>
 
     <div id="status">Ready to track...</div>
+    <div style="margin-top:20px; font-size:14px; color:#555;">
+        <b>Note:</b> For uninterrupted live tracking, keep this page open and your screen turned on! Mobile browsers pause GPS sharing when the screen locks.
+    </div>
 
     <script>
         let watchId = null;
+        let wakeLock = null;
 
-        function startTracking() {
+async function startTracking() {
             if (!("geolocation" in navigator)) {
                 alert("Geolocation is not supported by your browser");
                 return;
@@ -37,6 +41,18 @@
             if (!riderId) {
                 alert("Please enter a Rider ID first!");
                 return;
+            }
+
+            // Prevent screen from sleeping if supported
+            try {
+                if ('wakeLock' in navigator) {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                    wakeLock.addEventListener('release', () => {
+                        console.log('Screen Wake Lock was released');
+                    });
+                }
+            } catch (err) {
+                console.error(`${err.name}, ${err.message}`);
             }
 
             document.getElementById("startBtn").style.display = "none";
@@ -71,7 +87,7 @@
                     console.error("GPS Error:", error);
                     document.getElementById("status").innerText = `GPS Error: ${error.message}`;
                 },
-                { enableHighAccuracy: true, maximumAge: 0 } // Request best GPS hardware accuracy
+                { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 } // Request best GPS hardware accuracy
             );
         }
 
@@ -79,6 +95,10 @@
             if (watchId !== null) {
                 navigator.geolocation.clearWatch(watchId);
                 watchId = null;
+            }
+            if (wakeLock !== null) {
+                wakeLock.release()
+                    .then(() => wakeLock = null);
             }
             document.getElementById("startBtn").style.display = "inline-block";
             document.getElementById("stopBtn").style.display = "none";
