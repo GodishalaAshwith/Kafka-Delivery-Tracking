@@ -158,8 +158,11 @@ app.post('/api/track', async (req, res) => {
 
 app.post('/api/end-shift', (req, res) => {
     const { rider_id } = req.body;
-    if (rider_id && latestLocations[rider_id]) {
-        delete latestLocations[rider_id];
+    if (rider_id) {
+        if (latestLocations[rider_id]) {
+            delete latestLocations[rider_id];
+        }
+        // Always emit the disconnect so map always clears it on frontend
         io.emit('rider-disconnected', { rider_id });
     }
     res.json({ success: true, message: "Shift ended." });
