@@ -121,7 +121,11 @@
             const riderId = document.getElementById("riderId").value;
             fetch(`${BACKEND_URL}/api/end-shift`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'ngrok-skip-browser-warning': '69420'
+                },
+                keepalive: true,
                 body: JSON.stringify({ rider_id: riderId })
             }).catch(e => console.error("Error ending shift:", e));
         }

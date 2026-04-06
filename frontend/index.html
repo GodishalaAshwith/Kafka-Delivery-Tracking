@@ -41,6 +41,7 @@
 
         const markers = {};
         const riderCards = {};
+        const riderLastSeen = {};
 
         const socket = io(BACKEND_URL, {
             extraHeaders: {
@@ -85,6 +86,7 @@
         socket.on('rider-location-update', (data) => {
             const { rider_id, location, name, timestamp } = data;
             const displayName = name || rider_id;
+            riderLastSeen[rider_id] = Date.now();
 
             updateSidebar(rider_id, displayName, location, timestamp || Date.now()/1000);
 
@@ -112,10 +114,37 @@
                 riderCards[rider_id].remove();
                 delete riderCards[rider_id];
             }
+            if (riderLastSeen[rider_id]) {
+                delete riderLastSeen[rider_id];
+            }
             if (Object.keys(riderCards).length === 0) {
                 document.getElementById('riders-list').innerHTML = '<p style="color: #888; font-style: italic;">No riders active yet...</p>';
             }
         });
+
+        // Safety net: remove riders if no updates arrive for a while.
+        setInterval(() => {
+            const now = Date.now();
+            const staleAfterMs = 20000;
+
+            Object.keys(riderLastSeen).forEach((id) => {
+                if (now - riderLastSeen[id] > staleAfterMs) {
+                    if (markers[id]) {
+                        map.removeLayer(markers[id]);
+                        delete markers[id];
+                    }
+                    if (riderCards[id]) {
+                        riderCards[id].remove();
+                        delete riderCards[id];
+                    }
+                    delete riderLastSeen[id];
+                }
+            });
+
+            if (Object.keys(riderCards).length === 0) {
+                document.getElementById('riders-list').innerHTML = '<p style="color: #888; font-style: italic;">No riders active yet...</p>';
+            }
+        }, 5000);
 
         socket.on('config-updated', (config) => {
             if (!config.simulationEnabled) {
