@@ -3,35 +3,44 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Real Rider Tracker</title>
+    <title>Ì≥± Mobile Tracker App</title>
+    <link rel="stylesheet" href="style.css">
     <script src="config.js"></script>
-    <style>
-        body { font-family: sans-serif; text-align: center; padding: 20px; background-color: #f7f9fc; }
-        .btn { padding: 15px 30px; font-size: 18px; border-radius: 8px; border: none; cursor: pointer; color: white;     }
-        .start { background-color: #28a745; }
-        .stop { background-color: #dc3545; display: none; }
-        #status { margin-top: 20px; font-size: 18px; color: #333; }
-        input { font-size: 18px; padding: 10px; margin-bottom: 20px; width: 80%; border-radius: 5px; border: 1px solid #ccc; text-align: center; }
-    </style>
 </head>
 <body>
+    <nav class="navbar">
+        <h2>Ìª∞Ô∏è Rider Node</h2>
+        <div class="nav-links">
+            <a href="index.html">Map</a>
+            <a href="admin.html">Admin</a>
+        </div>
+    </nav>
+    <div class="main-content" style="align-items: center;">
+        <div class="card" style="text-align: center;">
+            <h1>Shift Connection</h1>
+            <p style="color: #666; margin-bottom: 30px;">Transmit your physical 4G/5G location to the main Kafka Cluster.</p>
 
-    <h1>üõµ Real Phone Tracker</h1>
-    <input type="text" id="riderId" placeholder="Enter Rider ID (e.g. rider_real_1)" value="rider_real_1">
+            <div class="mobile-input-group">
+                <label>Unique Rider ID</label>
+                <input type="text" id="riderId" placeholder="e.g. real_rider_1" value="real_rider_1">
+            </div>
 
-    <button id="startBtn" class="btn start" onclick="startTracking()">Start Tracking Me</button>
-    <button id="stopBtn" class="btn stop" onclick="stopTracking()">Stop Tracking</button>
+            <button id="startBtn" class="btn btn-primary" onclick="startTracking()">Connect & Transmit</button>
+            <button id="stopBtn" class="btn btn-danger" onclick="stopTracking()" style="display: none;">End Shift (Disconnect)</button>
 
-    <div id="status">Ready to track...</div>
-    <div style="margin-top:20px; font-size:14px; color:#555;">
-        <b>Note:</b> For uninterrupted live tracking, keep this page open and your screen turned on! Mobile browsers pause GPS sharing when the screen locks.
+            <div id="status" class="mobile-status">Status: Waiting to launch...</div>
+            
+            <div style="margin-top:20px; font-size:13px; color:#7d7d7d; text-align: left;">
+                <b>‚ö†Ô∏è Attention Rider:</b> For uninterrupted live tracking, keep this browser tab focused! Mobile OS will pause GPS tracking if your screen locks or you switch apps to save battery.
+            </div>
+        </div>
     </div>
 
     <script>
         let watchId = null;
         let wakeLock = null;
 
-async function startTracking() {
+        async function startTracking() {
             if (!("geolocation" in navigator)) {
                 alert("Geolocation is not supported by your browser");
                 return;
@@ -39,7 +48,7 @@ async function startTracking() {
 
             const riderId = document.getElementById("riderId").value;
             if (!riderId) {
-                alert("Please enter a Rider ID first!");
+                alert("Please enter your Rider ID to start a shift!");
                 return;
             }
 
@@ -52,38 +61,40 @@ async function startTracking() {
             }
 
             document.getElementById("startBtn").style.display = "none";
-            document.getElementById("stopBtn").style.display = "inline-block";
-            document.getElementById("status").innerText = "Waiting for GPS signal...";
+            document.getElementById("stopBtn").style.display = "inline-block";  
+            document.getElementById("status").innerHTML = `<span style="color:#0056b3;">Establishing GNSS satellite lock...</span>`;
 
             // Use HTML5 Geolocation to live-track the user's phone
             watchId = navigator.geolocation.watchPosition(
                 async (position) => {
                     const lat = position.coords.latitude;
                     const lng = position.coords.longitude;
-                    
-                    document.getElementById("status").innerHTML = `<b>Live:</b> Lat: ${lat.toFixed(5)}, Lng: ${lng.toFixed(5)}`;
+                    const speed = position.coords.speed ? (position.coords.speed * 3.6).toFixed(1) + ' km/h' : 'N/A';
 
-                    // Send the real coordinate to your Node.js Backend API
+                    document.getElementById("status").innerHTML = `
+                        <div style="color:#4CAF50; font-weight:bold; margin-bottom: 5px;">‚¨§ Transmitting Live</div>
+                        Lat: ${lat.toFixed(5)} | Lng: ${lng.toFixed(5)}<br>
+                        <small style="color: #666;">Est. Speed: ${speed}</small>
+                    `;
+
                     try {
-                        const response = await fetch(`${BACKEND_URL}/api/track`, {
+                        await fetch(`${BACKEND_URL}/api/track`, {
                             method: "POST",
-                            // Added "ngrok-skip-browser-warning" so our fetch API call is not blocked by Ngrok's free tier warning page
-                            headers: { 
+                            headers: {
                                 "Content-Type": "application/json",
                                 "ngrok-skip-browser-warning": "69420"
                             },
                             body: JSON.stringify({ rider_id: riderId, name: riderId, lat, lng })
                         });
-                        console.log("Sent coords to Ngrok:", response.status);
                     } catch (error) {
-                        console.error("Error sending GPS data to backend:", error);
+                        console.error("Transmission Error:", error);
                     }
                 },
                 (error) => {
                     console.error("GPS Error:", error);
-                    document.getElementById("status").innerText = `GPS Error: ${error.message}`;
+                    document.getElementById("status").innerHTML = `<span style="color:red;">GPS Fault: ${error.message}</span>`;
                 },
-                { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 } // Request best GPS hardware accuracy
+                { enableHighAccuracy: true, maximumAge: 0, timeout: 5000 }
             );
         }
 
@@ -95,9 +106,9 @@ async function startTracking() {
             if (wakeLock !== null) {
                 wakeLock.release().then(() => wakeLock = null).catch(e => console.error(e));
             }
-            document.getElementById("startBtn").style.display = "inline-block";
+            document.getElementById("startBtn").style.display = "inline-block"; 
             document.getElementById("stopBtn").style.display = "none";
-            document.getElementById("status").innerText = "Tracking Stopped. No longer sending to Kafka.";
+            document.getElementById("status").innerHTML = "Shift Ended. GPS Disconnected.";
         }
     </script>
 </body>

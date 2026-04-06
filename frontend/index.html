@@ -2,31 +2,46 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Live Rider Tracking Dashboard</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>üìç</text></svg>">
+    <title>Live Rider Tracking</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>Ì≥ç</text></svg>">
+    <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script src="https://cdn.socket.io/4.4.1/socket.io.min.js"></script>
     <script src="config.js"></script>
     <style>
-        #map { height: 100vh; width: 100%; margin: 0; padding: 0; }
-        body { margin: 0; }
         .rider-label { font-size: 14px; font-weight: bold; border-radius: 4px; box-shadow: 0 2px 5px rgba(0,0,0,0.2) !important; border: 2px solid #ccc; }
+        .mt-1 { margin-top: 5px; }
     </style>
 </head>
 <body>
-    <div id="map"></div>
+    <nav class="navbar">
+        <h2>Ìªµ Tracking Engine</h2>
+        <div class="nav-links">
+            <a href="index.html" class="active">Live Map</a>
+            <a href="admin.html">Admin</a>
+            <a href="mobile-tracker.html">Rider App</a>
+        </div>
+    </nav>
+    <div class="container">
+        <aside class="sidebar">
+            <h3>Ìø¢ Active Riders</h3>
+            <div id="riders-list">
+                <p style="color: #888; font-style: italic;">Waiting for riders to connect...</p>
+            </div>
+        </aside>
+        <div id="map"></div>
+    </div>
 
     <script>
         const map = L.map('map').setView([17.3850, 78.4867], 13);
-
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '¬© OpenStreetMap'
         }).addTo(map);
 
         const markers = {};
-        
-        // Pass ExtraHeaders so Socket.io polling isn't blocked by Ngrok's free tier
+        const riderCards = {};
+
         const socket = io(BACKEND_URL, {
             extraHeaders: {
                 "ngrok-skip-browser-warning": "69420"
@@ -34,20 +49,47 @@
         });
 
         const riderIcon = L.divIcon({
-            html: '<div style="font-size: 30px; filter: drop-shadow(2px 2px 3px rgba(0,0,0,0.5));">üõµ</div>',
+            html: '<div style="font-size: 30px; filter: drop-shadow(2px 2px 3px rgba(0,0,0,0.5));">Ìªµ</div>',
             className: 'custom-rider-icon',
             iconSize: [30, 30],
             iconAnchor: [15, 15],
             popupAnchor: [0, -15]
         });
 
-        socket.on('rider-location-update', (data) => {
-            const { rider_id, location, name } = data;
-            const displayName = name || rider_id; // Default back to ID if name is missing
+        function updateSidebar(id, displayName, location, timestamp) {
+            const list = document.getElementById('riders-list');
+            // If the waiting text is still there, clear it
+            if (Object.keys(riderCards).length === 0) list.innerHTML = '';
             
+            const timeStr = new Date(timestamp * 1000).toLocaleTimeString();
+
+            if (!riderCards[id]) {
+                const div = document.createElement('div');
+                div.className = 'rider-card active';
+                div.id = `card-${id}`;
+                div.innerHTML = `
+                    <div class="rider-name">${displayName} <span class="status-badge">Active</span></div>
+                    <div class="rider-meta"><strong>ID:</strong> ${id}</div>
+                    <div class="rider-meta mt-1"><strong>Lat:</strong> <span id="lat-${id}">${location.lat.toFixed(4)}</span> | <strong>Lng:</strong> <span id="lng-${id}">${location.lng.toFixed(4)}</span></div>
+                    <div class="rider-meta"><strong>Updated:</strong> <span id="time-${id}">${timeStr}</span></div>
+                `;
+                list.appendChild(div);
+                riderCards[id] = div;
+            } else {
+                document.getElementById(`lat-${id}`).innerText = location.lat.toFixed(4);
+                document.getElementById(`lng-${id}`).innerText = location.lng.toFixed(4);
+                document.getElementById(`time-${id}`).innerText = timeStr;
+            }
+        }
+
+        socket.on('rider-location-update', (data) => {
+            const { rider_id, location, name, timestamp } = data;
+            const displayName = name || rider_id;
+
+            updateSidebar(rider_id, displayName, location, timestamp || Date.now()/1000);
+
             if (markers[rider_id]) {
                 markers[rider_id].setLatLng([location.lat, location.lng]);
-                // Tooltips are permanent, so they auto-update without needing to click
                 markers[rider_id].setTooltipContent(`<b>${displayName}</b>`);
             } else {
                 markers[rider_id] = L.marker([location.lat, location.lng], { icon: riderIcon })
@@ -55,27 +97,29 @@
                     .bindTooltip(`<b>${displayName}</b>`, { permanent: true, direction: 'right', offset: [15, 0], className: 'rider-label' })
                     .openTooltip();
 
-                // Group all markers and smoothly zoom out if a distant rider is added
                 const group = new L.featureGroup(Object.values(markers));
                 map.fitBounds(group.getBounds(), { padding: [50, 50], maxZoom: 15 });
             }
         });
 
-        // Listen for Admin config updates to remove disabled riders dynamically
         socket.on('config-updated', (config) => {
             if (!config.simulationEnabled) {
-                // If Simulation totally disabled, clear all markers except Real ones
                 Object.keys(markers).forEach(id => {
-                   if (!id.includes('real')) { map.removeLayer(markers[id]); delete markers[id]; }
+                   if (!id.includes('real')) { 
+                       map.removeLayer(markers[id]); delete markers[id]; 
+                       if(riderCards[id]){ riderCards[id].remove(); delete riderCards[id]; }
+                   }
                 });
             } else {
-                // Remove individual disabled riders
                 Object.keys(config.simulatedRiders).forEach(id => {
                     if (!config.simulatedRiders[id].active && markers[id]) {
-                        map.removeLayer(markers[id]);
-                        delete markers[id];
+                        map.removeLayer(markers[id]); delete markers[id];
+                        if(riderCards[id]){ riderCards[id].remove(); delete riderCards[id]; }
                     }
                 });
+            }
+            if (Object.keys(riderCards).length === 0) {
+                document.getElementById('riders-list').innerHTML = '<p style="color: #888; font-style: italic;">No riders active yet...</p>';
             }
         });
     </script>
