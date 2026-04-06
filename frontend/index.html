@@ -102,6 +102,21 @@
             }
         });
 
+        socket.on('rider-disconnected', (data) => {
+            const { rider_id } = data;
+            if (markers[rider_id]) {
+                map.removeLayer(markers[rider_id]);
+                delete markers[rider_id];
+            }
+            if (riderCards[rider_id]) {
+                riderCards[rider_id].remove();
+                delete riderCards[rider_id];
+            }
+            if (Object.keys(riderCards).length === 0) {
+                document.getElementById('riders-list').innerHTML = '<p style="color: #888; font-style: italic;">No riders active yet...</p>';
+            }
+        });
+
         socket.on('config-updated', (config) => {
             if (!config.simulationEnabled) {
                 Object.keys(markers).forEach(id => {

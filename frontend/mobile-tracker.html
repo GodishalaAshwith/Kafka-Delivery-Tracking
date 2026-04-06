@@ -116,6 +116,14 @@
             document.getElementById("startBtn").style.display = "inline-block"; 
             document.getElementById("stopBtn").style.display = "none";
             document.getElementById("status").innerHTML = "Shift Ended. GPS Disconnected.";
+            
+            // Notify server that shift has ended
+            const riderId = document.getElementById("riderId").value;
+            fetch(`${BACKEND_URL}/api/end-shift`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ rider_id: riderId })
+            }).catch(e => console.error("Error ending shift:", e));
         }
     </script>
 </body>

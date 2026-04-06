@@ -48,32 +48,8 @@ const latestLocations = {};
 mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/tracking-app', {
   useNewUrlParser: true,
   useUnifiedTopology: true
-}).then(async () => {
+}).then(() => {
   console.log('MongoDB connected');
-  // Pre-load `latestLocations` with history on startup so users don't see an empty map!
-  try {
-      const locations = await RiderLocation.aggregate([
-          { $sort: { timestamp: -1 } },
-          { $group: { _id: "$rider_id", doc: { $first: "$$ROOT" } } }
-      ]);
-      locations.forEach(l => {
-          // Attempt to map names based on the adminConfig if they are simulated riders
-          let riderName = l._id;
-          if (adminConfig.simulatedRiders && adminConfig.simulatedRiders[l._id]) {
-              riderName = adminConfig.simulatedRiders[l._id].name;
-          }
-
-          latestLocations[l._id] = {
-              rider_id: l.doc.rider_id,
-              name: riderName,
-              location: { lat: l.doc.lat, lng: l.doc.lng },
-              timestamp: l.doc.timestamp
-          };
-      });
-      console.log(`Restored ${locations.length} active riders from database history.`);
-  } catch (e) {
-      console.error("Failed to restore history:", e.message);
-  }
 })
   .catch(console.error);
 
@@ -180,8 +156,18 @@ app.post('/api/track', async (req, res) => {
   }
 });
 
+app.post('/api/end-shift', (req, res) => {
+    const { rider_id } = req.body;
+    if (rider_id && latestLocations[rider_id]) {
+        delete latestLocations[rider_id];
+        io.emit('rider-disconnected', { rider_id });
+    }
+    res.json({ success: true, message: "Shift ended." });
+});
+
 // Run Kafka Consumer
 async function runKafka() {
+
   await producer.connect();
   console.log("Kafka Producer connected (Ready for real trackers)");
 
@@ -226,6 +212,9 @@ io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
   // Send the admin config
   socket.emit('config-updated', adminConfig);
+  
+  // Send whatever locations are actively in memory from incoming tracking
+  Object.values(latestLocations).forEach(riderData => {
     socket.emit("rider-location-update", riderData);
   });
 });
