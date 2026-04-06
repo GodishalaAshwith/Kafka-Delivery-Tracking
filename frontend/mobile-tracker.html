@@ -39,6 +39,7 @@
     <script>
         let watchId = null;
         let wakeLock = null;
+        let isTracking = false;
 
         async function startTracking() {
             if (!("geolocation" in navigator)) {
@@ -46,11 +47,13 @@
                 return;
             }
 
-            const riderId = document.getElementById("riderId").value;
+            const riderId = document.getElementById("riderId").value.trim();
             if (!riderId) {
                 alert("Please enter your Rider ID to start a shift!");
                 return;
             }
+
+            isTracking = true;
 
             try {
                 if ('wakeLock' in navigator) {
@@ -67,6 +70,10 @@
             // Use HTML5 Geolocation to live-track the user's phone
             watchId = navigator.geolocation.watchPosition(
                 async (position) => {
+                    if (!isTracking) {
+                        return;
+                    }
+
                     const lat = position.coords.latitude;
                     const lng = position.coords.longitude;
                     const accuracy = position.coords.accuracy;
@@ -106,6 +113,8 @@
         }
 
         function stopTracking() {
+            isTracking = false;
+
             if (watchId !== null) {
                 navigator.geolocation.clearWatch(watchId);
                 watchId = null;
@@ -118,7 +127,7 @@
             document.getElementById("status").innerHTML = "Shift Ended. GPS Disconnected.";
             
             // Notify server that shift has ended
-            const riderId = document.getElementById("riderId").value;
+            const riderId = document.getElementById("riderId").value.trim();
             fetch(`${BACKEND_URL}/api/end-shift`, {
                 method: 'POST',
                 headers: {

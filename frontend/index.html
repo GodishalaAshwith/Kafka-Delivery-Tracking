@@ -125,7 +125,7 @@
         // Safety net: remove riders if no updates arrive for a while.
         setInterval(() => {
             const now = Date.now();
-            const staleAfterMs = 20000;
+            const staleAfterMs = 7000;
 
             Object.keys(riderLastSeen).forEach((id) => {
                 if (now - riderLastSeen[id] > staleAfterMs) {
@@ -144,7 +144,7 @@
             if (Object.keys(riderCards).length === 0) {
                 document.getElementById('riders-list').innerHTML = '<p style="color: #888; font-style: italic;">No riders active yet...</p>';
             }
-        }, 5000);
+        }, 2000);
 
         socket.on('config-updated', (config) => {
             if (!config.simulationEnabled) {

@@ -43,6 +43,8 @@ const RiderLocation = mongoose.model('RiderLocation', RiderLocationSchema);
 
 // Keep the latest location in memory for when a user reloads the page
 const latestLocations = {};
+const endedShiftAt = {};
+const END_SHIFT_COOLDOWN_MS = 10000;
 
 // Connect to MongoDB
 mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/tracking-app', {
@@ -131,14 +133,20 @@ app.post('/api/track', async (req, res) => {
     }
 
     const { rider_id, lat, lng, name } = req.body;
+    const normalizedRiderId = typeof rider_id === 'string' ? rider_id.trim() : '';
     
-    if (!rider_id || !lat || !lng) {
+    if (!normalizedRiderId || !lat || !lng) {
         return res.status(400).json({ error: "Missing parameters" });
     }
 
+    const endedAt = endedShiftAt[normalizedRiderId];
+    if (endedAt && (Date.now() - endedAt) < END_SHIFT_COOLDOWN_MS) {
+      return res.status(409).json({ error: "Shift ended for this rider. Start a new shift before tracking." });
+    }
+
     const payload = {
-      rider_id: rider_id,
-      name: req.body.name || rider_id, // Default to rider_id if name missing
+      rider_id: normalizedRiderId,
+      name: req.body.name || normalizedRiderId, // Default to rider_id if name missing   
       location: { lat: parseFloat(lat), lng: parseFloat(lng) },
       timestamp: Date.now() / 1000
     };
@@ -157,13 +165,14 @@ app.post('/api/track', async (req, res) => {
 });
 
 app.post('/api/end-shift', (req, res) => {
-    const { rider_id } = req.body;
-    if (rider_id) {
-        if (latestLocations[rider_id]) {
-            delete latestLocations[rider_id];
+  const normalizedRiderId = typeof req.body?.rider_id === 'string' ? req.body.rider_id.trim() : '';
+  if (normalizedRiderId) {
+    endedShiftAt[normalizedRiderId] = Date.now();
+    if (latestLocations[normalizedRiderId]) {
+      delete latestLocations[normalizedRiderId];
         }
         // Always emit the disconnect so map always clears it on frontend
-        io.emit('rider-disconnected', { rider_id });
+    io.emit('rider-disconnected', { rider_id: normalizedRiderId });
     }
     res.json({ success: true, message: "Shift ended." });
 });
@@ -183,6 +192,13 @@ async function runKafka() {
     eachMessage: async ({ message }) => {
       try {
         const data = JSON.parse(message.value.toString());
+        data.rider_id = typeof data.rider_id === 'string' ? data.rider_id.trim() : data.rider_id;
+
+        const endedAt = endedShiftAt[data.rider_id];
+        if (endedAt && (Date.now() - endedAt) < END_SHIFT_COOLDOWN_MS) {
+          return;
+        }
+
         console.log("Received:", data);
 
         // Track state locally for reloads
