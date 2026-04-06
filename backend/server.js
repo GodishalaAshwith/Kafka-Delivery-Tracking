@@ -41,11 +41,40 @@ const RiderLocationSchema = new mongoose.Schema({
 
 const RiderLocation = mongoose.model('RiderLocation', RiderLocationSchema);
 
+// Keep the latest location in memory for when a user reloads the page
+const latestLocations = {};
+
 // Connect to MongoDB
 mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/tracking-app', {
   useNewUrlParser: true,
   useUnifiedTopology: true
-}).then(() => console.log('MongoDB connected'))
+}).then(async () => {
+  console.log('MongoDB connected');
+  // Pre-load `latestLocations` with history on startup so users don't see an empty map!
+  try {
+      const locations = await RiderLocation.aggregate([
+          { $sort: { timestamp: -1 } },
+          { $group: { _id: "$rider_id", doc: { $first: "$$ROOT" } } }
+      ]);
+      locations.forEach(l => {
+          // Attempt to map names based on the adminConfig if they are simulated riders
+          let riderName = l._id;
+          if (adminConfig.simulatedRiders && adminConfig.simulatedRiders[l._id]) {
+              riderName = adminConfig.simulatedRiders[l._id].name;
+          }
+
+          latestLocations[l._id] = {
+              rider_id: l.doc.rider_id,
+              name: riderName,
+              location: { lat: l.doc.lat, lng: l.doc.lng },
+              timestamp: l.doc.timestamp
+          };
+      });
+      console.log(`Restored ${locations.length} active riders from database history.`);
+  } catch (e) {
+      console.error("Failed to restore history:", e.message);
+  }
+})
   .catch(console.error);
 
 // Kafka Consumer setup
@@ -151,9 +180,7 @@ app.post('/api/track', async (req, res) => {
   }
 });
 
-// Keep the latest location in memory for when a user reloads the page
-const latestLocations = {};
-
+// Run Kafka Consumer
 async function runKafka() {
   await producer.connect();
   console.log("Kafka Producer connected (Ready for real trackers)");
@@ -197,8 +224,8 @@ runKafka().catch(console.error);
 
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
-  // Instantly send any riders we already know about to the newly connected map  
-  Object.values(latestLocations).forEach((riderData) => {
+  // Send the admin config
+  socket.emit('config-updated', adminConfig);
     socket.emit("rider-location-update", riderData);
   });
 });
