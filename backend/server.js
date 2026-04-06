@@ -151,6 +151,9 @@ app.post('/api/track', async (req, res) => {
   }
 });
 
+// Keep the latest location in memory for when a user reloads the page
+const latestLocations = {};
+
 async function runKafka() {
   await producer.connect();
   console.log("Kafka Producer connected (Ready for real trackers)");
@@ -165,6 +168,9 @@ async function runKafka() {
       try {
         const data = JSON.parse(message.value.toString());
         console.log("Received:", data);
+
+        // Track state locally for reloads
+        latestLocations[data.rider_id] = data;
 
         // 1. Send via WebSocket
         io.emit("rider-location-update", data);
@@ -191,6 +197,10 @@ runKafka().catch(console.error);
 
 io.on('connection', (socket) => {
   console.log('Client connected:', socket.id);
+  // Instantly send any riders we already know about to the newly connected map  
+  Object.values(latestLocations).forEach((riderData) => {
+    socket.emit("rider-location-update", riderData);
+  });
 });
 
 const PORT = process.env.PORT || 3001;
