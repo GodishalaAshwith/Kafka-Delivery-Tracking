@@ -79,6 +79,25 @@ cd /c/kafka
 ./bin/windows/kafka-server-start.bat ./config/server.properties
 ```
 
+### 1.5 Create Kafka Topics (First time only)
+*Open a new Git Bash terminal while Kafka is running.* Create the required topic(s):
+```bash
+cd /c/kafka
+
+# Core topic used by producer and backend
+./bin/windows/kafka-topics.bat --create --topic rider-location --bootstrap-server localhost:9092 --partitions 1 --replication-factor 1
+
+# Optional research topics for upcoming analytics features
+./bin/windows/kafka-topics.bat --create --topic traffic-density --bootstrap-server localhost:9092 --partitions 1 --replication-factor 1
+./bin/windows/kafka-topics.bat --create --topic rider-alerts --bootstrap-server localhost:9092 --partitions 1 --replication-factor 1
+./bin/windows/kafka-topics.bat --create --topic rider-predictions --bootstrap-server localhost:9092 --partitions 1 --replication-factor 1
+
+# Verify topics
+./bin/windows/kafka-topics.bat --list --bootstrap-server localhost:9092
+```
+
+If a topic already exists, Kafka will report it. You can safely continue.
+
 ### 2. Start the Backend Consumer Server
 *Open a new Git Bash terminal.* This hooks into MongoDB and listens to the Kafka topic.
 ```bash

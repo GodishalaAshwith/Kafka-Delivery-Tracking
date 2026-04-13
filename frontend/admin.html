@@ -57,7 +57,11 @@
     </div>
 
     <script>
-        fetch(`${BACKEND_URL}/api/admin/config`)
+        fetch(`${BACKEND_URL}/api/admin/config`, {
+            headers: {
+                "ngrok-skip-browser-warning": "69420"
+            }
+        })
             .then(res => res.json())
             .then(config => {
                 document.getElementById('simEnabled').checked = config.simulationEnabled;
@@ -86,7 +90,10 @@
 
             fetch(`${BACKEND_URL}/api/admin/config`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: { 
+                    'Content-Type': 'application/json',
+                    'ngrok-skip-browser-warning': '69420'
+                },
                 body: JSON.stringify(payload)
             }).then(res => res.json())
               .then(data => {
