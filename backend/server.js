@@ -187,11 +187,24 @@ async function runKafka() {
   console.log("Kafka Consumer connected");
   
   await consumer.subscribe({ topic: 'rider-predictions', fromBeginning: false });
+  await consumer.subscribe({ topic: 'traffic-density', fromBeginning: false });
+  await consumer.subscribe({ topic: 'rider-alerts', fromBeginning: false });
 
   await consumer.run({
-    eachMessage: async ({ message }) => {
+    eachMessage: async ({ topic, partition, message }) => {
       try {
         const data = JSON.parse(message.value.toString());
+
+        if (topic === 'traffic-density') {
+          io.emit("traffic-density-update", data);
+          return;
+        }
+
+        if (topic === 'rider-alerts') {
+          io.emit("rider-alert", data);
+          return;
+        }
+
         data.rider_id = typeof data.rider_id === 'string' ? data.rider_id.trim() : data.rider_id;
 
         const endedAt = endedShiftAt[data.rider_id];

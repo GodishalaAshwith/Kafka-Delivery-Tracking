@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/h3-js"></script>
     <script src="https://cdn.socket.io/4.4.1/socket.io.min.js"></script>
     <script src="config.js"></script>
     <style>
@@ -45,9 +46,22 @@
             attribution: '© OpenStreetMap'
         }).addTo(map);
 
+        // Phase 2: Drawing the restricted zone geofence on the UI
+        const restrictedZone = L.rectangle([
+            [17.435, 78.370],
+            [17.450, 78.385]
+        ], { color: "#d50000", weight: 2, fillOpacity: 0.1, dashArray: '5, 5' }).addTo(map);
+        
+        // Changed permanent to false so it only shows on hover and doesn't block the visual map
+        restrictedZone.bindTooltip("<b>Restricted Zone (HITEC City)</b>", { permanent: false, direction: "top", opacity: 0.8 });
+
         const markers = {};
         const riderCards = {};
         const riderLastSeen = {};
+        
+        // Phase 1: Heatmap storages
+        const densityLayers = {};
+        const densityLastSeen = {};
 
         const socket = io(BACKEND_URL, {
             extraHeaders: {
@@ -162,11 +176,44 @@
             }
         });
 
+        // Phase 1: Listen for sliding window traffic density updates
+        socket.on('traffic-density-update', (data) => {
+            const { h3_index, rider_density } = data;
+            densityLastSeen[h3_index] = Date.now();
+
+            // Clear old hexagon polygon if it exists
+            if (densityLayers[h3_index]) {
+                map.removeLayer(densityLayers[h3_index]);
+            }
+
+            if (rider_density > 0) {
+                // Get the geographical boundaries of the H3 hexagon
+                // h3-js returns an array of [lat, lng] points for Leaflet!
+                const boundaries = h3.cellToBoundary(h3_index);
+                
+                // Color ramp logic based on traffic density weight
+                let fillColor = "#4CAF50"; // Green = Low traffic
+                if (rider_density >= 3) fillColor = "#FF9800"; // Orange = Med
+                if (rider_density >= 5) fillColor = "#F44336"; // Red = High
+
+                const hexPolygon = L.polygon(boundaries, {
+                    color: fillColor,
+                    fillColor: fillColor,
+                    fillOpacity: 0.4,
+                    weight: 2
+                }).addTo(map);
+
+                hexPolygon.bindTooltip(`<b>Traffic Density:</b> ${rider_density} riders`, { direction: 'center' });
+                densityLayers[h3_index] = hexPolygon;
+            }
+        });
+
         // Safety net: remove riders if no updates arrive for a while.
         setInterval(() => {
             const now = Date.now();
             const staleAfterMs = 30000;
 
+            // Remove ghost riders
             Object.keys(riderLastSeen).forEach((id) => {
                 if (now - riderLastSeen[id] > staleAfterMs) {
                     if (markers[id]) {
@@ -178,6 +225,18 @@
                         delete riderCards[id];
                     }
                     delete riderLastSeen[id];
+                }
+            });
+
+            // Phase 1: Remove stale traffic density hexagons (e.g. windows passing)
+            const mapDensityStaleMs = 15000; 
+            Object.keys(densityLastSeen).forEach((h3_index) => {
+                if (now - densityLastSeen[h3_index] > mapDensityStaleMs) {
+                    if (densityLayers[h3_index]) {
+                        map.removeLayer(densityLayers[h3_index]);
+                        delete densityLayers[h3_index];
+                    }
+                    delete densityLastSeen[h3_index];
                 }
             });
 

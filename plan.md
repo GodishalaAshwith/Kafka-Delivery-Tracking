@@ -3,11 +3,11 @@
 ## Phase 1: Stream Processing Foundation
 - [x] Set up PySpark Structured Streaming to consume from Kafka (`rider-location` topic).
 - [x] Implement Uber H3 Spatial Indexing mapping lat/lng coordinates to H3 Hexagons.
-- [ ] Implement Windowed Aggregations (Average speed, rider density per hexagon) and publish to `traffic-density` Kafka topic.
+- [x] Implement Windowed Aggregations (Average speed, rider density per hexagon) and publish to `traffic-density` Kafka topic.
 
 ## Phase 2: Geofencing & Complex Event Processing
-- [ ] Implement dynamic geofencing (point-in-polygon checks for restricted/high-traffic zones).
-- [ ] Implement stateful processing to detect basic anomalies (e.g., speed > 150km/h) and publish to `rider-alerts` topic.
+- [x] Implement dynamic geofencing (point-in-polygon checks for restricted/high-traffic zones).
+- [x] Implement stateful processing to detect basic anomalies (e.g., speed > 150km/h) and publish to `rider-alerts` topic.
 
 ## Phase 3: Machine Learning & Predictive Edge
 - [x] Generate/Extract a training dataset from historical data.
@@ -18,4 +18,4 @@
 ## Phase 4: Frontend Upgrades & Benchmarking
 - [x] Update Node.js backend to consume new topics (`traffic-density`, `rider-alerts`, `rider-predictions`) and broadcast over WebSockets.
 - [x] Update Leaflet.js frontend to visualize live AI ETAs, and anomaly warning pulses.
-- [ ] Conduct benchmarking (End-to-End Latency, Throughput) under varying simulated loads (10 to 10,000 riders) and graph the results for the paper.
+- [x] Conduct benchmarking (End-to-End Latency, Throughput) under varying simulated loads (10 to 10,000 riders) and graph the results for the paper.

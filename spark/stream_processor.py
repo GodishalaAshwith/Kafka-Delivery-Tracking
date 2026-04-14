@@ -8,23 +8,24 @@ os.environ["hadoop.home.dir"] = "C:\\hadoop"
 os.environ["PATH"] = "C:\\hadoop\\bin;" + os.environ.get("PATH", "")
 
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, from_json, udf, to_json, struct
+from pyspark.sql.functions import col, from_json, udf, to_json, struct, window, count, atan2, sin, cos, sqrt
 from pyspark.sql.types import StructType, StructField, StringType, DoubleType, BooleanType
 import h3
 import joblib
+import math
 
 # Append hadoop bin to PATH so JVM can load hadoop.dll
 os.environ["PATH"] = os.environ["HADOOP_HOME"] + "\\bin;" + os.environ["PATH"]
 
 # ==============================================================================
 # PySpark Stream Processor for Real-Time Delivery Analytics
-# Conference Research Implementation - Phase 1 Foundation
 # ==============================================================================
 
 # Kafka Configuration
 KAFKA_BROKER = "localhost:9092"
 INPUT_TOPIC = "rider-location"
 OUTPUT_TOPIC_DENSITY = "traffic-density"
+OUTPUT_TOPIC_ALERTS = "rider-alerts"
 OUTPUT_TOPIC_PREDICTIONS = "rider-predictions"
 
 MODEL_DIR = os.path.join(os.path.dirname(__file__), "models")
@@ -116,6 +117,20 @@ def is_anomaly(score):
         return False
     return float(score) >= ANOMALY_THRESHOLD
 
+# Simple geofence checking a bounding box (e.g., a "high-traffic restricted zone" in Hyderabad)
+# HITEC City basic bounding box
+RESTRICTED_ZONE = {
+    "min_lat": 17.435, "max_lat": 17.450,
+    "min_lng": 78.370, "max_lng": 78.385
+}
+
+@udf(returnType=BooleanType())
+def is_in_restricted_zone(lat, lng):
+    if lat is None or lng is None:
+        return False
+    return (RESTRICTED_ZONE["min_lat"] <= lat <= RESTRICTED_ZONE["max_lat"]) and \
+           (RESTRICTED_ZONE["min_lng"] <= lng <= RESTRICTED_ZONE["max_lng"])
+
 def process_stream():
     print("🚀 Starting Streaming Pipeline from Kafka...")
 
@@ -137,14 +152,66 @@ def process_stream():
         .withColumn("h3_index", get_h3_index(col("location.lat"), col("location.lng"))) \
         .withColumn("event_time", (col("timestamp").cast("timestamp")))
 
+    # --- Phase 1: Windowed Aggregations (Traffic Density) ---
+    # Count unique riders per H3 hexagon every 10 seconds, sliding by 5 seconds
+    density_df = enriched_df \
+        .withWatermark("event_time", "1 minute") \
+        .groupBy(
+            window(col("event_time"), "10 seconds", "5 seconds"),
+            col("h3_index")
+        ) \
+        .agg(count("rider_id").alias("rider_density")) \
+        .filter(col("h3_index").isNotNull())
+
+    kafka_density_query = density_df \
+        .select(
+            to_json(
+                struct(
+                    col("window.start").cast("string").alias("window_start"),
+                    col("window.end").cast("string").alias("window_end"),
+                    col("h3_index"),
+                    col("rider_density")
+                )
+            ).alias("value")
+        ) \
+        .writeStream \
+        .format("kafka") \
+        .option("kafka.bootstrap.servers", KAFKA_BROKER) \
+        .option("topic", OUTPUT_TOPIC_DENSITY) \
+        .option("checkpointLocation", "D:/college/Projects/Kafka/.spark-checkpoints/density") \
+        .start()
+
+    # --- Phase 3 & 2: Machine Learning & Geofencing Inferences ---
     predictions_df = enriched_df \
         .withColumn("predicted_eta_minutes", predict_eta_minutes(col("location.lat"), col("location.lng"), col("timestamp"))) \
         .withColumn("anomaly_score", anomaly_score(col("location.lat"), col("location.lng"), col("timestamp"))) \
-        .withColumn("is_anomaly", is_anomaly(col("anomaly_score")))
+        .withColumn("is_anomaly", is_anomaly(col("anomaly_score"))) \
+        .withColumn("in_restricted_zone", is_in_restricted_zone(col("location.lat"), col("location.lng")))
 
-    # --- Phase 1: Spatial Tagging Verification Sink (Terminal) ---
-    # To start with, we'll write the raw enriched stream to the console to verify
-    # the H3 indexes are successfully calculating.
+    # --- Phase 2: Geofencing Alerts Pipeline ---
+    # Filter only those inside the zone or flagged as anomaly
+    alerts_df = predictions_df.filter((col("in_restricted_zone") == True) | (col("is_anomaly") == True))
+
+    kafka_alerts_query = alerts_df \
+        .select(
+            to_json(
+                struct(
+                    col("rider_id"),
+                    col("name"),
+                    col("h3_index"),
+                    col("in_restricted_zone"),
+                    col("is_anomaly")
+                )
+            ).alias("value")
+        ) \
+        .writeStream \
+        .format("kafka") \
+        .option("kafka.bootstrap.servers", KAFKA_BROKER) \
+        .option("topic", OUTPUT_TOPIC_ALERTS) \
+        .option("checkpointLocation", "D:/college/Projects/Kafka/.spark-checkpoints/alerts") \
+        .start()
+
+    # --- Verification Sink (Terminal) ---
     
     console_query = predictions_df.writeStream \
         .outputMode("append") \
@@ -166,6 +233,7 @@ def process_stream():
                     col("predicted_eta_minutes"),
                     col("anomaly_score"),
                     col("is_anomaly"),
+                    col("in_restricted_zone")
                 )
             ).alias("value")
         ) \
@@ -178,6 +246,8 @@ def process_stream():
 
     console_query.awaitTermination()
     kafka_predictions_query.awaitTermination()
+    kafka_density_query.awaitTermination()
+    kafka_alerts_query.awaitTermination()
 
 if __name__ == "__main__":
     process_stream()
