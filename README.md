@@ -31,11 +31,13 @@ An end-to-end, event-driven architecture simulating a real-world delivery tracki
 
 ## 📦 Core Features Implemented
 
-- **Highly Scalable Event Streaming**: Uses Apache Kafka to ingest thousands of GPS coordinates asynchronously.
-- **Realistic Routing Engine**: Rather than teleporting randomly, Python uses the **OSRM (Open Source Routing Machine) API** to fetch exact real-world driving street coordinates and simulate realistic vehicle movement.
+- **Highly Scalable Event Streaming (Apache Kafka)**: Ingests thousands of GPS coordinates asynchronously across `rider-location`, `rider-predictions`, `traffic-density`, and `rider-alerts` topics.
+- **PySpark Structured Streaming**: Replaces slow database queries by processing telemetry natively in the streaming layer over a 10-second sliding window.
+- **Machine Learning at the Edge**: Scikit-Learn models (`RandomForestRegressor` and `IsolationForest`) are embedded directly into PySpark UDFs to calculate real-time AI ETAs and detect "Ghost Rider" GPS fraud instantly.
+- **Spatial Heatmaps (Uber H3 Indexing)**: Replaces scattered UI dots with dynamic, color-coded hexagonal aggregations (Green/Orange/Red) representing clustered traffic density.
+- **Dynamic Geofencing**: Real-time bounded polygon checks alerting when riders enter restricted zones (e.g., HITEC City).
 - **Real-Time WebSockets**: Frontend subscribes via Socket.io to receive live updates with sub-second latency from the Node.js consumer.
-- **Persistent Storage**: All location history is logged into MongoDB to allow data analysis, playback, or auditing.
-- **Custom UI Integration**: Maps powered by Leaflet and OpenStreetMap native tiles, heavily customized with SVG/Emoji hybrid drop-shadow rider tracking tokens.
+- **Custom UI Integration**: Maps powered by Leaflet and OpenStreetMap native tiles, customized with SVG drop-shadow rider tokens that pulse red on fraud detection.
 
 ---
 
@@ -49,11 +51,18 @@ delivery-tracking/
 │   └── server.js            # Consumer + WebSocket Server + MongoDB schemas
 │
 ├── producer/
-│   ├── requirements.txt     # kafka-python, requests, polyline
-│   └── simulator.py         # Advanced OSRM route coordinate simulator
+│   ├── requirements.txt     
+│   ├── simulator.py         # Advanced OSRM route coordinate simulator
+│   └── benchmark.py         # Kafka throughput load-stress generator (10k+ riders)
+│
+├── spark/
+│   ├── train_models.py      # Scikit-Learn Offline Training (RandomForest/IsolationForest)
+│   ├── stream_processor.py  # PySpark Streaming Engine (H3, ML Inference, Windowing)
+│   └── models/              # Pre-trained .joblib intelligence files
 │
 └── frontend/
-    └── index.html           # Leaflet.js Interactive frontend mapping
+    ├── index.html           # Leaflet.js Interactive frontend mapping & AI Status
+    └── mobile-tracker.html  # HTML5 Geolocation API interface for real 5G tracking 
 ```
 
 ---
@@ -98,29 +107,43 @@ cd /c/kafka
 
 If a topic already exists, Kafka will report it. You can safely continue.
 
-### 2. Start the Backend Consumer Server
-*Open a new Git Bash terminal.* This hooks into MongoDB and listens to the Kafka topic.
+### 2. Prepare the AI Models
+*Open a Git Bash terminal.* Train the Machine Learning models using the historical data synthesizer.
+```bash
+cd delivery-tracking/spark
+python -m ensurepip --default-pip
+python -m pip install -r requirements.txt
+python train_models.py
+```
+*(You will see `.joblib` files generated inside the `spark/models/` folder).*
+
+### 3. Start PySpark Streaming Processor
+*In the same Spark terminal,* start the stream processing engine that applies the ML models and Spatial H3 logic natively over Kafka.
+```bash
+python stream_processor.py
+```
+
+### 4. Start the Backend Consumer Server
+*Open a new Git Bash terminal.* This hooks into MongoDB and listens to the Kafka ML prediction/density/alert topics.
 ```bash
 cd delivery-tracking/backend
 npm install
 node server.js
 ```
-*(You should see "MongoDB connected" and "Kafka Consumer connected" in the terminal).*
 
-### 3. Start the Rider Simulator
+### 5. Start the Rider Simulator
 *Open a third Git Bash terminal.* This processes OSRM routes and begins producing data into Kafka every 2 seconds.
 ```bash
 cd delivery-tracking/producer
 python -m pip install -r requirements.txt
-# Additional map tools
-python -m pip install requests polyline
 python simulator.py
 ```
+*(Alternatively, run `python benchmark.py` to stress-test your system with 10,000 riders).*
 
-### 4. View the Live Dashboard
+### 6. View the Live AI Dashboard
 Navigate to the `delivery-tracking/frontend/` folder in your Windows File Explorer and **double-click `index.html`** to open it in your browser. 
 
-You will immediately see 🛵 scooters tracking live along the streets of Hyderabad!
+You will immediately see 🛵 scooters tracking live along the streets, predicting ETAs, glowing red on anomalies, and projecting traffic hit-maps cleanly via HTML5 WebSocket events!
 
 ---
 
