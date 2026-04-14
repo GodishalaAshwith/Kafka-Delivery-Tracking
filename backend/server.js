@@ -186,7 +186,7 @@ async function runKafka() {
   await consumer.connect();
   console.log("Kafka Consumer connected");
   
-  await consumer.subscribe({ topic: 'rider-location', fromBeginning: false });
+  await consumer.subscribe({ topic: 'rider-predictions', fromBeginning: false });
 
   await consumer.run({
     eachMessage: async ({ message }) => {

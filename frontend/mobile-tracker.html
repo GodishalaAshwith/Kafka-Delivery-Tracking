@@ -79,16 +79,14 @@
                     const accuracy = position.coords.accuracy;
                     const speed = position.coords.speed ? (position.coords.speed * 3.6).toFixed(1) + ' km/h' : 'N/A';
 
-                    // Strict filtering to ensure map-snap like accuracy (ignores low-quality cell-tower bounces)
-                    if (accuracy > 60) {
-                        document.getElementById("status").innerHTML = `<span style="color:#ff9800;">Waiting for better GNSS accuracy... (Currently ${Math.round(accuracy)}m off)</span>`;
-                        return;
-                    }
+                    // Removed strict filtering (return) so PC simulators and low-accuracy environments work
+                    let accuracyWarning = accuracy > 60 ? `<br><span style="color:#ff9800;">Low GNSS accuracy (${Math.round(accuracy)}m)</span>` : "";
 
                     document.getElementById("status").innerHTML = `
                         <div style="color:#4CAF50; font-weight:bold; margin-bottom: 5px;">⬤ Transmitting Live</div>
                         Lat: ${lat.toFixed(5)} | Lng: ${lng.toFixed(5)}<br>     
                         <small style="color: #666;">Est. Speed: ${speed} • Acc: ±${Math.round(accuracy)}m</small>
+                        ${accuracyWarning}
                     `;
 
                     try {

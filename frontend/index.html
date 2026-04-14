@@ -12,6 +12,12 @@
     <style>
         .rider-label { font-size: 14px; font-weight: bold; border-radius: 4px; box-shadow: 0 2px 5px rgba(0,0,0,0.2) !important; border: 2px solid #ccc; }
         .mt-1 { margin-top: 5px; }
+        @keyframes pulse-red {
+            0% { transform: scale(1); filter: drop-shadow(0 0 5px rgba(255,0,0,0.8)); }
+            50% { transform: scale(1.3); filter: drop-shadow(0 0 15px rgba(255,0,0,1)); }
+            100% { transform: scale(1); filter: drop-shadow(0 0 5px rgba(255,0,0,0.8)); }
+        }
+        .pulse-red { animation: pulse-red 1s infinite; z-index: 1000 !important; }
     </style>
 </head>
 <body>
@@ -71,7 +77,14 @@
                 div.innerHTML = `
                     <div class="rider-name">${displayName} <span class="status-badge">Active</span></div>
                     <div class="rider-meta"><strong>ID:</strong> ${id}</div>
-                    <div class="rider-meta mt-1"><strong>Lat:</strong> <span id="lat-${id}">${location.lat.toFixed(4)}</span> | <strong>Lng:</strong> <span id="lng-${id}">${location.lng.toFixed(4)}</span></div>
+                    <div class="rider-meta mt-1">
+                        <strong>Lat:</strong> <span id="lat-${id}">${location.lat.toFixed(4)}</span> | 
+                        <strong>Lng:</strong> <span id="lng-${id}">${location.lng.toFixed(4)}</span>
+                    </div>
+                    <div class="rider-meta mt-1" style="background: #eef2f5; padding: 5px; border-radius: 4px;">
+                        <strong>🤖 AI ETA:</strong> <span id="eta-${id}" style="color: #2196f3; font-weight: bold;">Calculating...</span> min
+                        <br><strong>⚠️ Status:</strong> <span id="anomaly-${id}" style="color: green; font-weight: bold;">Normal</span>
+                    </div>
                     <div class="rider-meta"><strong>Updated:</strong> <span id="time-${id}">${timeStr}</span></div>
                 `;
                 list.appendChild(div);
@@ -84,19 +97,46 @@
         }
 
         socket.on('rider-location-update', (data) => {
-            const { rider_id, location, name, timestamp } = data;
+            const { rider_id, location, name, timestamp, predicted_eta_minutes, is_anomaly } = data;
             const displayName = name || rider_id;
             riderLastSeen[rider_id] = Date.now();
 
             updateSidebar(rider_id, displayName, location, timestamp || Date.now()/1000);
 
+            // Update AI ETA & Anomaly Status in Sidebar
+            const etaSpan = document.getElementById(`eta-${rider_id}`);
+            const anomalySpan = document.getElementById(`anomaly-${rider_id}`);
+            
+            if (etaSpan && predicted_eta_minutes !== undefined) {
+                etaSpan.innerText = predicted_eta_minutes.toFixed(1);
+            }
+            if (anomalySpan && is_anomaly !== undefined) {
+                if (is_anomaly) {
+                    anomalySpan.innerText = "FRAUD DETECTED";
+                    anomalySpan.style.color = "red";
+                } else {
+                    anomalySpan.innerText = "Normal";
+                    anomalySpan.style.color = "green";
+                }
+            }
+
+            // Flag rider icon in red if anomaly detected
+            const dynamicRiderIcon = L.divIcon({
+                html: `<div class="${is_anomaly ? 'pulse-red' : ''}" style="font-size: 30px; width: 30px; height: 30px; line-height: 30px; text-align: center; filter: drop-shadow(2px 2px 3px rgba(0,0,0,0.5)); transition: all 0.3s;">🛵</div>`,
+                className: 'custom-rider-icon',
+                iconSize: [30, 30],
+                iconAnchor: [15, 15],
+                popupAnchor: [0, -15]
+            });
+
             if (markers[rider_id]) {
                 markers[rider_id].setLatLng([location.lat, location.lng]);
-                markers[rider_id].setTooltipContent(`<b>${displayName}</b>`);
+                markers[rider_id].setIcon(dynamicRiderIcon);
+                markers[rider_id].setTooltipContent(`<b>${displayName}</b> ${is_anomaly ? '<span style="color:red;">⚠️</span>' : ''}`);
             } else {
-                markers[rider_id] = L.marker([location.lat, location.lng], { icon: riderIcon })
+                markers[rider_id] = L.marker([location.lat, location.lng], { icon: dynamicRiderIcon })
                     .addTo(map)
-                    .bindTooltip(`<b>${displayName}</b>`, { permanent: true, direction: 'right', offset: [15, 0], className: 'rider-label' })
+                    .bindTooltip(`<b>${displayName}</b> ${is_anomaly ? '<span style="color:red;">⚠️</span>' : ''}`, { permanent: true, direction: 'right', offset: [15, 0], className: 'rider-label' })
                     .openTooltip();
 
                 const group = new L.featureGroup(Object.values(markers));
@@ -125,7 +165,7 @@
         // Safety net: remove riders if no updates arrive for a while.
         setInterval(() => {
             const now = Date.now();
-            const staleAfterMs = 7000;
+            const staleAfterMs = 30000;
 
             Object.keys(riderLastSeen).forEach((id) => {
                 if (now - riderLastSeen[id] > staleAfterMs) {

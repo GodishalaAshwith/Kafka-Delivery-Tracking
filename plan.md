@@ -16,6 +16,6 @@
 - [x] Emit inferences to a new `rider-predictions` Kafka topic.
 
 ## Phase 4: Frontend Upgrades & Benchmarking
-- [ ] Update Node.js backend to consume new topics (`traffic-density`, `rider-alerts`, `rider-predictions`) and broadcast over WebSockets.
-- [ ] Update Leaflet.js frontend to visualize H3 density heatmaps, live AI ETAs, and anomaly warning pulses.
+- [x] Update Node.js backend to consume new topics (`traffic-density`, `rider-alerts`, `rider-predictions`) and broadcast over WebSockets.
+- [x] Update Leaflet.js frontend to visualize live AI ETAs, and anomaly warning pulses.
 - [ ] Conduct benchmarking (End-to-End Latency, Throughput) under varying simulated loads (10 to 10,000 riders) and graph the results for the paper.
