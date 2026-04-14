@@ -1,0 +1,11 @@
+{
+  "source": "synthetic",
+  "records": 5000,
+  "features": [
+    "lat",
+    "lng",
+    "hour",
+    "weekday"
+  ],
+  "anomaly_threshold": 3.177432343387694e-18
+}
