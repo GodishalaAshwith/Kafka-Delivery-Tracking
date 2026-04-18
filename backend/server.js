@@ -238,6 +238,44 @@ async function runKafka() {
   });
 }
 
+function haversineDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371; // Earth's radius in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = 
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
+function findClosestRider(customerLat, customerLng, riderType = 'any') {
+  let closest = null;
+  let minDistance = Infinity;
+  
+  for (const [riderId, riderData] of Object.entries(latestLocations)) {
+    if (!riderData.location) continue;
+    
+    // Check if rider is simulated (present in adminConfig) or real
+    const isSimulated = adminConfig.simulatedRiders && adminConfig.simulatedRiders.hasOwnProperty(riderId);
+    if (riderType === 'real' && isSimulated) continue;
+    if (riderType === 'simulated' && !isSimulated) continue;
+
+    const distance = haversineDistance(
+      customerLat, customerLng,
+      riderData.location.lat, riderData.location.lng
+    );
+    
+    if (distance < minDistance) {
+      minDistance = distance;
+      closest = { rider_id: riderId, ...riderData };
+    }
+  }
+  
+  return closest;
+}
+
 runKafka().catch(console.error);
 
 io.on('connection', (socket) => {
@@ -248,6 +286,35 @@ io.on('connection', (socket) => {
   // Send whatever locations are actively in memory from incoming tracking
   Object.values(latestLocations).forEach(riderData => {
     socket.emit("rider-location-update", riderData);
+  });
+
+  socket.on('rider-join', (rider_id) => {
+    socket.join(`rider:${rider_id}`);
+    console.log(`Rider ${rider_id} joined room`);
+  });
+
+  socket.on('book-ride', (data) => {
+    const { customer_name, lat, lng, riderType } = data;
+    
+    const closestRider = findClosestRider(lat, lng, riderType);
+    
+    if (!closestRider) {
+      socket.emit('book-ride-error', { error: 'No matching riders available for the selected type' });
+      return;
+    }
+    
+    // Broadcast ride request to that specific rider room
+    io.to(`rider:${closestRider.rider_id}`).emit('ride-request', {
+      customer_name,
+      customer_location: { lat, lng },
+      timestamp: Date.now()
+    });
+    
+    socket.emit('book-ride-response', { 
+      status: 'pending',
+      assigned_rider: closestRider.rider_id,
+      rider_location: closestRider.location
+    });
   });
 });
 

@@ -111,6 +111,7 @@ If a topic already exists, Kafka will report it. You can safely continue.
 *Open a Git Bash terminal.* Train the Machine Learning models using the historical data synthesizer.
 ```bash
 cd delivery-tracking/spark
+source .venv/Scripts/activate
 python -m ensurepip --default-pip
 python -m pip install -r requirements.txt
 python train_models.py

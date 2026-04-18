@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Book a Ride</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.socket.io/4.4.1/socket.io.min.js"></script>
+    <script src="config.js"></script>
+    <style>
+        #map { height: 400px; width: 100%; margin-top: 20px; border-radius: 8px; }
+        .booking-card { padding: 20px; background: white; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin: 20px auto; max-width: 600px; }
+        .form-group { margin-bottom: 15px; }
+        .form-group label { display: block; margin-bottom: 5px; font-weight: bold; }
+        .form-group input { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        .btn { padding: 10px 15px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        .btn:disabled { background: #ccc; }
+        .status-msg { margin-top: 10px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <h2>Delivery Control Center</h2>
+        <div class="nav-links">
+            <a href="index.html">Live Map</a>
+            <a href="mobile-tracker.html">Rider App</a>
+            <a href="book-ride.html">Book Ride</a>
+            <a href="admin.html">Admin</a>
+        </div>
+    </nav>
+    <div class="main-content">
+        <div class="booking-card">
+            <h2>Book a Bike</h2>
+            <div class="form-group">
+                <label>Your Name</label>
+                <input type="text" id="customerName" placeholder="Enter your name">
+            </div>
+            <div class="form-group">
+                <label>Preference</label>
+                <select id="riderType" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px;">
+                    <option value="any">Any available rider</option>
+                    <option value="real">Real Rider (Mobile App)</option>
+                    <option value="simulated">Simulated Rider (AI Route)</option>
+                </select>
+            </div>
+            <button id="bookBtn" class="btn" onclick="bookRide()">Find Closest Rider</button>
+            <div id="status" class="status-msg"></div>
+            
+            <div id="map"></div>
+        </div>
+    </div>
+
+    <script>
+        let map = L.map('map').setView([17.3850, 78.4867], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+        
+        let customerMarker = null;
+        let riderMarker = null;
+        let routeLine = null;
+        
+        let customerLat = null;
+        let customerLng = null;
+        let assignedRiderId = null;
+
+        const socket = io(BACKEND_URL);
+
+        // Get user location
+        navigator.geolocation.getCurrentPosition(pos => {
+            customerLat = pos.coords.latitude;
+            customerLng = pos.coords.longitude;
+            map.setView([customerLat, customerLng], 14);
+            
+            customerMarker = L.marker([customerLat, customerLng]).addTo(map)
+                .bindPopup("You are here").openPopup();
+        }, err => {
+            document.getElementById('status').innerText = "Location access denied. Cannot book ride.";
+        });
+
+        function bookRide() {
+            const name = document.getElementById('customerName').value.trim();
+            const riderType = document.getElementById('riderType').value;
+            if (!name) return alert("Please enter your name");
+            if (!customerLat || !customerLng) return alert("Waiting for location...");
+
+            document.getElementById('status').innerText = "Finding closest rider...";
+            document.getElementById('bookBtn').disabled = true;
+
+            socket.emit('book-ride', {
+                customer_name: name,
+                lat: customerLat,
+                lng: customerLng,
+                riderType: riderType
+            });
+        }
+
+        socket.on('book-ride-response', (data) => {
+            if (data.status === 'pending') {
+                assignedRiderId = data.assigned_rider;
+                document.getElementById('status').innerText = `Rider assigned! Waiting for rider ${assignedRiderId} to move.`;
+                
+                if (data.rider_location) {
+                    updateRiderLocation(data.rider_location.lat, data.rider_location.lng);
+                }
+            }
+        });
+
+        socket.on('book-ride-error', (data) => {
+            document.getElementById('status').innerText = `Error: ${data.error}`;
+            document.getElementById('bookBtn').disabled = false;
+        });
+
+        // Listen for live updates and update map if it's our rider
+        socket.on('rider-location-update', (data) => {
+            if (data.rider_id === assignedRiderId) {
+                updateRiderLocation(data.location.lat, data.location.lng);
+            }
+        });
+
+        function updateRiderLocation(lat, lng) {
+            if (!riderMarker) {
+                riderMarker = L.marker([lat, lng]).addTo(map).bindPopup("Your Rider");
+            } else {
+                riderMarker.setLatLng([lat, lng]);
+            }
+            
+            if (routeLine) {
+                map.removeLayer(routeLine);
+            }
+            
+            routeLine = L.polyline([
+                [customerLat, customerLng],
+                [lat, lng]
+            ], {color: 'blue', weight: 4}).addTo(map);
+
+            // Adjust bounds to fit both
+            const bounds = L.latLngBounds([customerLat, customerLng], [lat, lng]);
+            map.fitBounds(bounds, { padding: [50, 50] });
+        }
+    </script>
+</body>
+</html>

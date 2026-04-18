@@ -5,7 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title> Mobile Tracker App</title>
     <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.socket.io/4.4.1/socket.io.min.js"></script>
     <script src="config.js"></script>
+    <style>
+        #map { height: 300px; width: 100%; margin-top: 15px; border-radius: 8px; display: none; }
+    </style>
 </head>
 <body>
     <nav class="navbar">
@@ -29,6 +35,8 @@
             <button id="stopBtn" class="btn btn-danger" onclick="stopTracking()" style="display: none;">End Shift (Disconnect)</button>
 
             <div id="status" class="mobile-status">Status: Waiting to launch...</div>
+            <div id="booking-alert" style="display: none; padding: 15px; margin-top: 15px; background: #e3f2fd; border-left: 4px solid #0056b3; text-align: left; border-radius: 4px; font-weight: bold;"></div>
+            <div id="map"></div>
             
             <div style="margin-top:20px; font-size:13px; color:#7d7d7d; text-align: left;">
                 <b>⚠️ Attention Rider:</b> For uninterrupted live tracking, keep this browser tab focused! Mobile OS will pause GPS tracking if your screen locks or you switch apps to save battery.
@@ -40,6 +48,49 @@
         let watchId = null;
         let wakeLock = null;
         let isTracking = false;
+
+        let map = null;
+        let customerMarker = null;
+        let riderMarker = null;
+        let routeLine = null;
+        let socket = null;
+        let lastLat = null;
+        let lastLng = null;
+        let currentCustomer = null;
+
+        function initMap(lat, lng) {
+            if (!map) {
+                document.getElementById('map').style.display = 'block';
+                map = L.map('map').setView([lat, lng], 14);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+                riderMarker = L.marker([lat, lng]).addTo(map).bindPopup("You are here");
+                
+                // Keep trying to resize if display takes time
+                setTimeout(() => map.invalidateSize(), 500);
+            } else {
+                riderMarker.setLatLng([lat, lng]);
+            }
+            lastLat = lat;
+            lastLng = lng;
+            updateRoute();
+        }
+
+        function updateRoute() {
+            if (currentCustomer && lastLat && lastLng) {
+                if (routeLine) {
+                    map.removeLayer(routeLine);
+                }
+                routeLine = L.polyline([
+                    [lastLat, lastLng],
+                    [currentCustomer.lat, currentCustomer.lng]
+                ], {color: 'red', weight: 4}).addTo(map);
+
+                const bounds = L.latLngBounds([lastLat, lastLng], [currentCustomer.lat, currentCustomer.lng]);
+                map.fitBounds(bounds, { padding: [20, 20] });
+            } else if (map && lastLat && lastLng) {
+                map.setView([lastLat, lastLng], 15);
+            }
+        }
 
         async function startTracking() {
             if (!("geolocation" in navigator)) {
@@ -66,7 +117,23 @@
             document.getElementById("startBtn").style.display = "none";
             document.getElementById("stopBtn").style.display = "inline-block";  
             document.getElementById("status").innerHTML = `<span style="color:#0056b3;">Establishing GNSS satellite lock...</span>`;
+        socket = io(BACKEND_URL);
+        socket.on('connect', () => {
+            socket.emit('rider-join', riderId);
+        });
 
+        socket.on('ride-request', (data) => {
+            document.getElementById('booking-alert').style.display = 'block';
+            document.getElementById('booking-alert').innerHTML = `Ride Booked by ${data.customer_name}! Path shown in red.`;
+            
+            currentCustomer = data.customer_location;
+            if (!customerMarker && map) {
+                customerMarker = L.marker([currentCustomer.lat, currentCustomer.lng]).addTo(map).bindPopup("Customer");
+            } else if (customerMarker) {
+                customerMarker.setLatLng([currentCustomer.lat, currentCustomer.lng]);
+            }
+            updateRoute();
+        });
             // Use HTML5 Geolocation to live-track the user's phone
             watchId = navigator.geolocation.watchPosition(
                 async (position) => {
@@ -88,6 +155,8 @@
                         <small style="color: #666;">Est. Speed: ${speed} • Acc: ±${Math.round(accuracy)}m</small>
                         ${accuracyWarning}
                     `;
+
+                    initMap(lat, lng);
 
                     try {
                         await fetch(`${BACKEND_URL}/api/track`, {
@@ -112,6 +181,21 @@
 
         function stopTracking() {
             isTracking = false;
+
+            if (socket) {
+                socket.disconnect();
+                socket = null;
+            }
+            if (map) {
+                map.remove();
+                map = null;
+                document.getElementById('map').style.display = 'none';
+            }
+            customerMarker = null;
+            riderMarker = null;
+            routeLine = null;
+            currentCustomer = null;
+            document.getElementById('booking-alert').style.display = 'none';
 
             if (watchId !== null) {
                 navigator.geolocation.clearWatch(watchId);
