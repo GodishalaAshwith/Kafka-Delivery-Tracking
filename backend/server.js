@@ -44,7 +44,20 @@ const RiderLocation = mongoose.model('RiderLocation', RiderLocationSchema);
 // Keep the latest location in memory for when a user reloads the page
 const latestLocations = {};
 const endedShiftAt = {};
-const END_SHIFT_COOLDOWN_MS = 10000;
+const END_SHIFT_COOLDOWN_MS = 60000; // Increased cooldown to 60 seconds to prevent ghost data
+
+// Cleanup inactive riders every 10 seconds
+setInterval(() => {
+  const now = Date.now();
+  for (const [riderId, riderData] of Object.entries(latestLocations)) {
+    // If location hasn't been updated in 60 seconds, remove them
+    if (riderData.last_updated && (now - riderData.last_updated > 60000)) {
+      console.log(`Removing inactive rider ${riderId} due to 60s timeout`);
+      delete latestLocations[riderId];
+      io.emit('rider-disconnected', { rider_id: riderId });
+    }
+  }
+}, 10000);
 
 // Connect to MongoDB
 mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/tracking-app', {
@@ -146,10 +159,19 @@ app.post('/api/track', async (req, res) => {
 
     const payload = {
       rider_id: normalizedRiderId,
-      name: req.body.name || normalizedRiderId, // Default to rider_id if name missing   
+      name: req.body.name || normalizedRiderId, // Default to rider_id if name missing
       location: { lat: parseFloat(lat), lng: parseFloat(lng) },
       timestamp: Date.now() / 1000
     };
+
+    // Instant UI Update for Real Riders to map bypasses 10s Spark window
+    const realRiderData = {
+        ...payload,
+        isSimulated: false, 
+        last_updated: Date.now()
+    };
+    latestLocations[normalizedRiderId] = realRiderData;
+    io.emit("rider-location-update", realRiderData);
 
     // Forward the real GPS device location to Kafka
     await producer.send({
@@ -215,10 +237,16 @@ async function runKafka() {
         console.log("Received:", data);
 
         // Track state locally for reloads
-        latestLocations[data.rider_id] = data;
+        const isSimulated = adminConfig.simulatedRiders && adminConfig.simulatedRiders.hasOwnProperty(data.rider_id);
+        
+        latestLocations[data.rider_id] = {
+          ...data,
+          isSimulated: isSimulated,
+          last_updated: Date.now()
+        };
 
         // 1. Send via WebSocket
-        io.emit("rider-location-update", data);
+        io.emit("rider-location-update", latestLocations[data.rider_id]);
 
         // 2. Store in DB (Non-blocking so tracking still works if DB fails)
         try {
@@ -253,26 +281,35 @@ function haversineDistance(lat1, lon1, lat2, lon2) {
 function findClosestRider(customerLat, customerLng, riderType = 'any') {
   let closest = null;
   let minDistance = Infinity;
-  
+
   for (const [riderId, riderData] of Object.entries(latestLocations)) {
     if (!riderData.location) continue;
-    
-    // Check if rider is simulated (present in adminConfig) or real
-    const isSimulated = adminConfig.simulatedRiders && adminConfig.simulatedRiders.hasOwnProperty(riderId);
-    if (riderType === 'real' && isSimulated) continue;
-    if (riderType === 'simulated' && !isSimulated) continue;
+
+    // Log the check to debug if any issues persist
+    const isSimulated = riderData.isSimulated === true;
+    console.log(`Evaluating rider ${riderId} - Type check: wants ${riderType}, isSim ${isSimulated}`);
+
+    if (riderType === 'real' && isSimulated) {
+      console.log(`Skipping ${riderId} (simulated) because real was requested.`);
+      continue;
+    }
+    if (riderType === 'simulated' && !isSimulated) {
+      console.log(`Skipping ${riderId} (real) because simulated was requested.`);
+      continue;
+    }
 
     const distance = haversineDistance(
       customerLat, customerLng,
       riderData.location.lat, riderData.location.lng
     );
-    
+
     if (distance < minDistance) {
       minDistance = distance;
       closest = { rider_id: riderId, ...riderData };
     }
   }
   
+  if (closest) console.log(`Matched closest rider: ${closest.rider_id}`);
   return closest;
 }
 

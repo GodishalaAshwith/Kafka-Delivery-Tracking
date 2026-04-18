@@ -118,6 +118,16 @@
             }
         });
 
+        socket.on('rider-disconnected', (data) => {
+            if (data.rider_id === assignedRiderId) {
+                document.getElementById('status').innerText = `Rider ${assignedRiderId} has gone offline. Please book a new ride.`;
+                if (riderMarker) map.removeLayer(riderMarker);
+                if (routeLine) map.removeLayer(routeLine);
+                assignedRiderId = null;
+                document.getElementById('bookBtn').disabled = false;
+            }
+        });
+
         function updateRiderLocation(lat, lng) {
             if (!riderMarker) {
                 riderMarker = L.marker([lat, lng]).addTo(map).bindPopup("Your Rider");
