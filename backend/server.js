@@ -209,6 +209,7 @@ async function runKafka() {
   console.log("Kafka Consumer connected");
   
   await consumer.subscribe({ topic: 'rider-predictions', fromBeginning: false });
+  await consumer.subscribe({ topic: 'rider-location', fromBeginning: false });
   await consumer.subscribe({ topic: 'traffic-density', fromBeginning: false });
   await consumer.subscribe({ topic: 'rider-alerts', fromBeginning: false });
 

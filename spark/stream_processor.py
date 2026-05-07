@@ -140,6 +140,7 @@ def process_stream():
         .option("kafka.bootstrap.servers", KAFKA_BROKER) \
         .option("subscribe", INPUT_TOPIC) \
         .option("startingOffsets", "latest") \
+        .option("failOnDataLoss", "false") \
         .load()
 
     # Parse JSON value and add H3 index
@@ -244,10 +245,7 @@ def process_stream():
         .option("checkpointLocation", "D:/college/Projects/Kafka/.spark-checkpoints/predictions") \
         .start()
 
-    console_query.awaitTermination()
-    kafka_predictions_query.awaitTermination()
-    kafka_density_query.awaitTermination()
-    kafka_alerts_query.awaitTermination()
+    spark.streams.awaitAnyTermination()
 
 if __name__ == "__main__":
     process_stream()

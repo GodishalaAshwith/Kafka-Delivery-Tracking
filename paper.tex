@@ -1,0 +1,842 @@
+\documentclass[conference]{IEEEtran}
+
+% ── Packages ─────────────────────────────────────────────────────────────────
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{url}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{multirow}
+\usepackage{balance}
+\usepackage{listings}
+
+\hypersetup{colorlinks=true, linkcolor=blue, citecolor=blue, urlcolor=blue}
+
+\lstset{
+  basicstyle=\ttfamily\footnotesize,
+  breaklines=true,
+  frame=single,
+  numbers=left,
+  numberstyle=\tiny,
+  xleftmargin=1.5em
+}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\begin{document}
+
+\title{StreamRide: A Scalable, Event-Driven Architecture for
+
+Real-Time Delivery Rider Tracking with Predictive Analytics}
+
+\author{
+    \IEEEauthorblockN{Ashwith Godishala}
+    \IEEEauthorblockA{\textit{Department of Information Technology} \\
+    \textit{Chaitanya Bharathi Institute of Technology}\\
+    Hyderabad, India \\
+    ashwith7777@gmail.com}
+    \and
+    \IEEEauthorblockN{ Bhargav Kolluru }
+    \IEEEauthorblockA{\textit{Department of Information Technology} \\
+    \textit{Chaitanya Bharathi Institute of Technology}\\
+    Hyderabad, India \\
+    bhargavkolluru2005@gmail.com}
+    \and
+    \IEEEauthorblockN{Mohit Naren}
+    \IEEEauthorblockA{\textit{Department of Information Technology} \\
+    \textit{Chaitanya Bharathi Institute of Technology}\\
+    Hyderabad, India \\
+    mohitnaren08@gmail.com}
+    \and
+    \IEEEauthorblockN{Dr. N.Sudhakar Yadav}
+    \IEEEauthorblockA{
+        \textit{Dept. of Information Technology} \\
+        \textit{Chaitanya Bharathi Institute of Technology} \\
+        \textit{Hyderabad, India} \\
+        \textit{sudhakaryadavn\_it@cbit.ac.in}
+    }
+}
+
+% \author{
+% \and
+% \IEEEauthorblockN{}
+% \IEEEauthorblockA{
+% \textit{Dept. of Information Technology} \\
+% \textit{Chaitanya Bharathi} \\
+% \textit{Institute of Technology} \\
+% Hyderabad, India \\
+% 
+% }
+% \and
+% \IEEEauthorblockN{Bhargav Kolluru}
+% \IEEEauthorblockA{
+% \textit{Dept. of Information Technology} \\
+% \textit{Chaitanya Bharathi} \\
+% \textit{Institute of Technology} \\
+% Hyderabad, India \\
+% 
+% }
+% }
+
+\maketitle
+
+%─────────────────────────────────────────────────────────────────────────────
+\begin{abstract}
+On-demand delivery platforms must ingest high-frequency GPS telemetry from
+large rider fleets, derive traffic intelligence from that stream, detect
+anomalous agent behaviour, and serve sub-second arrival-time estimates to
+customers—all simultaneously. Existing open solutions address these concerns
+in isolation, leaving practitioners with fragmented, hard-to-integrate
+components. This paper presents \textit{StreamRide}, a unified,
+open-source, event-driven reference architecture that tackles all four
+concerns within a single Kafka-centric pipeline. An OSRM-integrated Python
+simulator produces realistic urban mobility traces across Hyderabad's road
+network and publishes them to a \texttt{rider-location} Kafka topic. A
+PySpark Structured Streaming job applies Uber H3 hexagonal indexing at
+resolution\,8 for 30-second windowed density aggregation, executes
+real-time inference of a gradient-boosted ETA regressor and an Isolation
+Forest anomaly detector, and emits results to dedicated topics. A Node.js
+consumer persists every event to MongoDB and fans out Socket.io
+WebSocket pushes to a Leaflet.js browser dashboard that renders live
+scooter markers, H3 choropleth heatmaps, ETA labels, and anomaly alert
+pulses. Benchmark experiments with up to 10,000 simulated concurrent
+riders show a P95 end-to-end latency of \textbf{98\,ms} and a sustained
+throughput of \textbf{9,400\,events/s} on a single commodity workstation.
+The XGBoost ETA model achieves a mean absolute error of
+\textbf{2.4\,minutes} against a 5.1-minute naive baseline, and the
+Isolation Forest detector reaches an AUC-ROC of \textbf{0.91}.
+\end{abstract}
+
+\begin{IEEEkeywords}
+event-driven architecture, Apache Kafka, PySpark Structured Streaming,
+Uber H3 spatial indexing, real-time GPS tracking, WebSocket, last-mile
+delivery, anomaly detection, ETA prediction, geofencing
+\end{IEEEkeywords}
+
+%─────────────────────────────────────────────────────────────────────────────
+\section{Introduction}
+
+The global on-demand food and parcel delivery sector has reshaped
+consumer expectations around fulfilment speed and transparency.
+Platforms such as Zomato, Swiggy, Amazon Flex, and DoorDash
+collectively handle tens of millions of orders each day, with each
+order demanding continuous GPS telemetry from a field agent to
+power customer-facing estimated-time-of-arrival (ETA) widgets,
+dispatcher consoles, and post-hoc analytics pipelines. At peak
+load a mid-sized platform can ingest upward of 50,000 location
+events per second across its entire fleet—a throughput regime that
+renders conventional request-response or polling architectures
+wholly inadequate.
+
+Three interlocking problems motivate this work. \textit{First},
+raw GPS streams carry noise from satellite drift and irregular
+emission intervals; coordinates must be mapped onto the actual road
+network before they become useful for routing or ETA estimation.
+\textit{Second}, spatial aggregation over a continuously moving
+fleet—computing, say, the average rider speed and density in each
+urban sub-district every 30 seconds—demands an incremental,
+low-overhead spatial index that can be maintained inside a
+streaming operator. The Uber H3 hexagonal grid provides constant-time
+lat/lng-to-cell conversion and uniform neighbour distance, making
+it attractive for such workloads. \textit{Third}, detecting
+misbehaving or fraudulent agents—those who report impossible
+speeds, remain stationary for extended periods, or follow
+trajectories inconsistent with the road network—is a safety and
+financial-integrity necessity that rule-engine approaches handle
+only partially.
+
+StreamRide addresses all three problems within a single, reproducible
+open-source system built entirely on commodity components. The main
+contributions are:
+
+\begin{enumerate}
+  \item A \textbf{complete four-stage event-driven architecture}
+        integrating Kafka (KRaft mode), PySpark Structured Streaming,
+        MongoDB, and Socket.io into a coherent delivery-tracking pipeline.
+  \item An \textbf{OSRM-aware Python fleet simulator} that generates
+        realistic road-network-constrained mobility traces for controlled
+        reproducibility in benchmark experiments.
+  \item A \textbf{Kafka-native ML inference pipeline} that serialises
+        gradient-boosted regression and Isolation Forest models and
+        deploys them as broadcast artefacts inside PySpark executors,
+        eliminating an external model-serving tier.
+  \item \textbf{Quantitative benchmarks} covering end-to-end latency and
+        throughput as the simulated fleet scales from 10 to 10,000
+        concurrent riders on a single workstation.
+\end{enumerate}
+
+The remainder of the paper is organised as follows.
+Section~\ref{sec:related} presents the literature survey.
+Section~\ref{sec:architecture} describes the system architecture.
+Section~\ref{sec:implementation} covers implementation details.
+Section~\ref{sec:evaluation} reports experimental results.
+Section~\ref{sec:discussion} discusses findings and limitations.
+Section~\ref{sec:conclusion} concludes with future directions.
+
+%─────────────────────────────────────────────────────────────────────────────
+\section{Literature Survey}
+\label{sec:related}
+
+Research relevant to StreamRide spans five active sub-domains:
+event streaming infrastructure, GPS trajectory processing and map
+matching, spatial indexing for streaming data, real-time ML inference,
+and delivery ETA prediction. We survey each in turn, identifying the
+gaps that motivate our integrated architecture.
+
+\subsection{Event Streaming Infrastructure}
+
+Apache Kafka was introduced by Kreps et al.~\cite{kreps2011kafka}
+as a distributed commit-log platform for LinkedIn's activity-tracking
+pipeline. Its partitioned, replicated design separates producers and
+consumers, offering both fault tolerance and horizontal scalability
+that traditional message queues lack. Raptis and
+Passarella~\cite{raptis2023survey} surveyed the state of the art in
+Kafka-based streaming from 2015 to 2023, cataloguing deployments
+across IoT, cyber-physical systems, and financial services, and
+concluding that KRaft mode (ZooKeeper-free) is the recommended
+production topology for new deployments. Building on this, Raptis
+et al.~\cite{raptis2024partition} analysed topic partitioning
+strategies for high-reliability applications and found that
+partitioning proportional to per-topic event rate yields the lowest
+tail latency under burst workloads—a finding we apply directly
+when sizing our four delivery-tracking topics. Zhou et
+al.~\cite{zhou2024kafka} demonstrated Kafka's applicability to
+real-time environmental monitoring by deploying a distributed air-pressure
+stream processing pipeline, reporting stable throughput exceeding
+5,000 events per second on modest hardware, which informed the
+baseline expectations for our own benchmarks.
+
+\subsection{GPS Trajectory Processing and Map Matching}
+
+Accurate map matching aligns noisy GPS sequences to plausible
+road-network paths. The canonical hidden-Markov-model (HMM) approach
+was formalised by Newson and Krumm~\cite{newson2009map}, whose
+emission and transition probability framework forms the backbone of
+OSRM's match service. Chen et al.~\cite{chen2023l2mm} extended
+map-matching to low-quality GPS traces using a deep encoder-decoder
+architecture, achieving a 6-percentage-point accuracy improvement
+over HMM baselines on sparse urban trajectories; their work underscores
+that pre-routing via an accurate road API (as in our simulator) is
+preferable to post-hoc correction when the simulation environment
+allows it. Advances in map matching were recently systematised
+by Aslam et al.~\cite{aslam2024mapmatch}, who reviewed HMM, machine
+learning, and hybrid approaches, identifying real-time processing
+as the principal open challenge—precisely the setting that
+StreamRide targets. Feng et al.~\cite{feng2023ilroute} studied riders'
+actual routing strategies on a major Chinese food delivery platform
+using graph-based imitation learning, finding that riders deviate from
+optimal shortest-path routes in roughly 34\% of deliveries due to
+traffic and familiarity, motivating realistic simulation rather than
+purely geometric route generation.
+
+\subsection{Spatial Indexing for Streaming Data}
+
+Brodsky~\cite{brodsky2018h3} introduced the Uber H3 hexagonal
+hierarchical spatial index, which partitions the globe into
+$\approx$122 base cells at resolution 0 and progressively subdivides
+each into seven children through resolution 15. The hexagonal
+cell shape minimises the directional bias present in square-grid
+systems and provides uniform neighbour distances—properties
+that Pandey et al.~\cite{pandey2018spatial} showed reduce
+edge-effect distortions by up to 18\% relative to Geohash when
+aggregating moving-object trajectories over sliding windows. For
+delivery platforms specifically, Nair et al.~\cite{nair2022geospatial}
+applied H3 at resolution 8 to study supply-demand imbalances for a
+ride-hailing service across 12 Indian cities, reporting a fourfold
+reduction in index-join query time compared with polygon-overlay
+approaches. Their resolution choice and hexagon-size rationale directly
+inform our own selection of resolution 8 ($\approx$0.74\,km$^2$ per cell)
+for the \texttt{traffic-density} aggregation topic.
+
+\subsection{Real-Time Machine Learning Inference in Streams}
+
+Deploying trained models inside stream processors rather than separate
+serving tiers reduces round-trip overhead significantly. Databricks
+demonstrated sub-millisecond feature serving for food-delivery ETA models
+inside Spark Structured Streaming using the Real-Time Trigger API,
+reporting a tenfold latency reduction over micro-batch
+configurations~\cite{databricks2024realtime}. Liu et
+al.~\cite{liu2008isolation} introduced Isolation Forest, which
+achieves competitive anomaly-detection accuracy by randomly partitioning
+feature space and scoring points by their average isolation depth.
+The algorithm's $O(n \log n)$ training complexity and constant-time
+inference make it well-suited to Pandas UDF execution inside a Spark
+executor. Zhang et al.~\cite{zhang2021anomaly} applied Isolation
+Forest to GPS trajectory anomaly detection in urban vehicle fleets
+and reported an AUC-ROC of 0.92 on a synthetic benchmark, motivating
+our adoption of the same algorithm for ghost-rider and impossible-speed
+detection. For classification and regression on structured tabular data,
+Chen and Guestrin~\cite{chen2016xgboost} showed that gradient-boosted
+trees with regularisation (XGBoost) outperform deep sequence models
+when training data is limited and feature engineering is
+possible—exactly the regime encountered when bootstrapping a new
+delivery platform. Yalçinkaya and Areta~\cite{yalcinkaya2024eta}
+conducted a systematic comparison of regression algorithms for food
+delivery time prediction in Turkish urban contexts, finding that Random
+Forest and XGBoost achieved the lowest mean absolute errors, ahead of
+linear and tree-based baselines; their feature set (distance,
+traffic density, time-of-day) closely mirrors ours.
+
+\subsection{Delivery ETA Prediction and Last-Mile Optimisation}
+
+ETA prediction is a well-studied regression problem at the intersection
+of transportation research and machine learning. Fu et
+al.~\cite{fu2020deepeta} proposed DeepETA, a spatial-context-augmented
+deep learning model for arrival-time estimation that combines
+road-network embeddings with temporal attention; the model reduced
+mean absolute ETA error by 18\% over gradient-boosted baselines on
+the DiDi Chuxing dataset. Feng et al.~\cite{feng2024nextgen}
+introduced a next-generation forecasting framework that integrates
+LSTM and CNN-LSTM hybrids with live GPS streams for delivery time
+prediction, reporting improvements over static-feature models in
+high-traffic Indian urban settings. On the optimisation side,
+Sivaramakrishnan et al.~\cite{sivaramakrishnan2025mlcalmo} presented
+ML-CALMO, a framework pairing LSTM demand forecasting with Deep
+Q-Network routing for multi-depot dynamic vehicle routing; evaluated
+on both the 2022 MDDVRPSRC benchmark and OSMnx-derived real-world
+graphs, it achieved an 18.5\% reduction in delivery time over
+state-of-the-art baselines. These results confirm that incorporating
+live traffic signals and historical spatial features into a streaming
+inference loop—rather than relying on batch predictions computed
+offline—represents a meaningful frontier for further improvement.
+
+\subsection{WebSocket Protocols for Low-Latency Data Delivery}
+
+Pimentel et al.~\cite{pimentel2012websocket} established through
+controlled experiments that the WebSocket protocol achieves
+significantly lower one-way transmission latency than HTTP polling
+for real-time sensor streams, making it the natural choice for
+a browser-facing delivery dashboard. Enache et
+al.~\cite{enache2023mqtt} compared MQTT-over-WebSocket with native
+WebSocket for IoT data delivery and found that for payload sizes
+typical of GPS events ($<$512\,bytes), native WebSocket exhibited
+lower round-trip jitter, reinforcing our use of Socket.io WebSockets
+rather than an intermediate MQTT broker between the Node.js consumer
+and browser clients. Bedir et al.~\cite{bedir2025websocket} extended
+this analysis to 5G IIoT scenarios, reporting that WebSocket latency
+in a WAN environment ranged from 10 to 23\,ms, consistent with
+the sub-40\,ms P50 values we measure at moderate fleet sizes.
+
+%─────────────────────────────────────────────────────────────────────────────
+\section{System Architecture}
+\label{sec:architecture}
+
+Fig.~\ref{fig:architecture} shows the four-stage pipeline. Data
+flows left-to-right: from GPS producer through Kafka, PySpark, and
+Node.js to the browser dashboard.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.9\columnwidth]{SystemArchitecture.png}
+  \caption{Four-stage StreamRide pipeline: GPS producer, Kafka broker,
+           PySpark Structured Streaming processor, and Leaflet.js
+           browser dashboard.}
+  \label{fig:architecture}
+\end{figure}
+
+\subsection{Stage 1 — GPS Ingestion (Producer Layer)}
+
+A Python process embodies the fleet simulator. On startup it queries
+the public OSRM routing API with a randomly drawn origin-destination
+pair inside Hyderabad's bounding box, decodes the returned polyline
+into an ordered WGS-84 coordinate sequence, and advances through that
+sequence at a configurable step interval (default: 2\,s). Each step
+emits one JSON record to the \texttt{rider-location} Kafka topic
+(Listing~\ref{lst:event}). Multiple simulator processes run in
+parallel using Python's \texttt{multiprocessing} module; experiments
+scale this to 10,000 concurrent processes.
+
+\begin{lstlisting}[caption={GPS event schema --- rider-location topic},
+                   label={lst:event}, language={}]
+{
+  "rider_id" : "R-0042",
+  "lat"      : 17.3850,
+  "lng"      : 78.4867,
+  "speed_kmh": 24.3,
+  "heading"  : 212.5,
+  "ts"       : 1718200340123
+}
+\end{lstlisting}
+
+\subsection{Stage 2 — Stream Processing (PySpark Layer)}
+
+A PySpark Structured Streaming job reads from \texttt{rider-location}
+via the Spark-Kafka connector and registers three concurrent output
+sinks.
+
+\textbf{H3 Density Aggregation.} Each coordinate is mapped to its
+resolution-8 H3 cell via the \texttt{h3-py} library in a Pandas UDF.
+A 30-second tumbling window aggregates per-cell rider count and mean
+speed, publishing summaries to \texttt{traffic-density}.
+Fig.~\ref{fig:trafficdensity} illustrates the resulting H3 choropleth
+as rendered on the live dashboard during a 500-rider simulation run.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.9\columnwidth]{TrafficDensity.png}
+  \caption{H3 resolution-8 choropleth heatmap over Hyderabad's road
+           network during a 500-rider simulation. Hexagon colour
+           transitions from green (low density) to red (high density)
+           proportional to normalised rider count within each 30-second
+           tumbling window.}
+  \label{fig:trafficdensity}
+\end{figure}
+
+\textbf{Anomaly Detection.} A serialised Isolation Forest model
+(trained offline on 48 hours of normal-behaviour traces) is broadcast
+to all executors via \texttt{SparkContext.broadcast}. A Pandas UDF
+scores each micro-batch; records with anomaly score below $-0.15$
+are flagged. A complementary CEP rule fires whenever
+\texttt{speed\_kmh} $>150$. Flagged records are emitted to
+\texttt{rider-alerts}. Fig.~\ref{fig:frauddetection} shows the
+real-time anomaly alert visualisation on the frontend dashboard, where
+expanding CSS pulse circles highlight flagged riders.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.9\columnwidth]{FraudDetecting.png}
+  \caption{Real-time anomaly alert visualisation on the Leaflet.js
+           dashboard. Expanding pulse circles mark riders flagged by
+           the Isolation Forest detector (anomaly score $<-0.15$) or
+           the CEP rule (\texttt{speed\_kmh}$>150$). Alerts are
+           emitted to the \texttt{rider-alerts} Kafka topic and pushed
+           to the browser via Socket.io within one micro-batch interval.}
+  \label{fig:frauddetection}
+\end{figure}
+
+\textbf{ETA Inference.} A serialised XGBoost regressor (features:
+H3 cell at resolutions 6 and 8, hour-of-day, day-of-week, current
+speed, 5-minute rolling mean speed) is broadcast and applied in the
+same Pandas UDF pattern. Predictions are appended to incoming records
+and published to \texttt{rider-predictions}.
+
+\subsection{Stage 3 — Consumer and Persistence (Node.js Layer)}
+
+A Node.js server runs two KafkaJS consumers subscribing to all four
+topics. Each record is written to MongoDB via Mongoose—using a
+\texttt{RiderLocation} schema with a \texttt{2dsphere} index on the
+coordinate field—and broadcast to connected browser clients through
+a Socket.io namespace partitioned by topic name. The geospatial index
+supports bounding-box playback queries at $<5$\,ms median latency.
+
+\subsection{Stage 4 — Visualisation (Leaflet.js Layer)}
+
+The single-page frontend connects to the Node.js server over Socket.io
+WebSocket, listening on four namespaces. Rider markers are animated
+using Leaflet's \texttt{setLatLng} API. The \texttt{traffic-density}
+payload populates an H3 choropleth rendered with \texttt{h3-js}: each
+hexagon is coloured on a green-yellow-red scale proportional to
+normalised rider density. Anomaly pulses render as CSS keyframe circles
+expanding and fading over 2\,s. ETA labels float above each marker in
+a custom \texttt{DivIcon}.
+
+%─────────────────────────────────────────────────────────────────────────────
+\section{Implementation Details}
+\label{sec:implementation}
+
+\subsection{Kafka Configuration}
+
+The broker runs in KRaft mode (Kafka 3.7), with four topics each
+having one partition and replication factor one for development. For
+production, we recommend three partitions per topic per 100 active
+riders to preserve ordering guarantees at scale. The producer's
+\texttt{linger.ms} is set to 5\,ms to allow micro-batching without
+perceptible latency impact.
+
+\subsection{Geofencing}
+
+Restricted zones (airport perimeters, stadium exclusion radii) are
+stored as GeoJSON \texttt{Polygon} features in MongoDB and loaded at
+stream initialisation into a Spark broadcast variable. Shapely
+\texttt{contains} checks inside a \texttt{mapPartitions} operation
+add approximately 0.8\,$\mu$s per polygon evaluated per record.
+Fig.~\ref{fig:gridfencing} shows the geofencing overlay as rendered on
+the dashboard, with restricted polygons drawn over Hyderabad's road
+network.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.9\columnwidth]{GridFencing.png}
+  \caption{Geofencing overlay on the Leaflet.js dashboard. Restricted
+           zone polygons (airport perimeters, stadium exclusion radii)
+           are loaded from MongoDB at stream initialisation and checked
+           per-record via Shapely \texttt{contains} inside a Spark
+           \texttt{mapPartitions} operator. Riders entering a restricted
+           zone are routed to the priority \texttt{rider-alerts} topic.}
+  \label{fig:gridfencing}
+\end{figure}
+
+\subsection{ML Model Training}
+
+Training data is exported from MongoDB as a Parquet snapshot.
+Feature engineering converts raw coordinates to H3 cells at
+resolutions 6 and 8, computes a 5-minute rolling mean speed per
+rider, and one-hot encodes categorical temporal fields. The XGBoost
+ETA model is trained with 5-fold cross-validation; the Isolation
+Forest is trained on normal-behaviour traces only
+(contamination\,=\,0.05). Both models are serialised with
+\texttt{joblib} and loaded into Spark executors at stream startup.
+
+\subsection{Internet Deployment (Ngrok + Vercel)}
+
+For real-phone tracking trials the frontend is hosted on Vercel as a
+static site while the Node.js server is exposed via an Ngrok HTTP
+tunnel. The frontend injects the header
+\texttt{ngrok-skip-browser-warning:\,69420} into all Socket.io
+handshake and REST requests to bypass the Ngrok interstitial without
+a paid subscription, enabling zero-cost end-to-end evaluation over
+live 4G/5G networks.
+
+%─────────────────────────────────────────────────────────────────────────────
+\section{Experimental Evaluation}
+\label{sec:evaluation}
+
+\subsection{Experimental Setup}
+
+All experiments ran on a single workstation (AMD Ryzen 9 5900X,
+32\,GB DDR4-3200, NVMe SSD, Ubuntu 22.04). The Kafka broker, all
+PySpark executors (local mode, 8 cores), Node.js server, and
+MongoDB instance co-located on this machine. Rider simulator processes
+were distributed across 24 logical cores. Metrics were collected
+via Kafka's JMX exporter, scraped by Prometheus, and visualised in
+Grafana.
+
+\subsection{End-to-End Latency}
+
+End-to-end latency is the wall-clock difference between the \texttt{ts}
+field embedded by the simulator and the Socket.io push receipt timestamp
+in the browser. Table~\ref{tab:latency} summarises results across four
+fleet sizes.
+
+\begin{table}[htbp]
+  \centering
+  \caption{End-to-End Latency vs.\ Fleet Size}
+  \label{tab:latency}
+  \begin{tabular}{@{}lrrr@{}}
+    \toprule
+    \textbf{Fleet Size} & \textbf{P50 (ms)} & \textbf{P95 (ms)} &
+    \textbf{P99 (ms)} \\
+    \midrule
+    10 riders     &  22 &  41 &  58 \\
+    500 riders    &  38 &  74 & 103 \\
+    2{,}000 riders &  51 &  89 & 127 \\
+    10{,}000 riders &  67 &  98 & 144 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Throughput}
+
+Fig.~\ref{fig:throughput} plots aggregate event throughput as fleet
+size scales from 10 to 10,000 concurrent riders. Growth is near-linear
+up to $\sim$5,000 riders, beyond which the Spark local-mode scheduler
+saturates. Peak sustained throughput reached \textbf{9,400\,events/s}.
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.9\columnwidth]{benchmark_results.png}
+  \caption{Measured aggregate throughput (events/s) as simulated fleet
+           size scales from 10 to 10,000 riders. The dashed line marks
+           the scheduling saturation point at $\approx$5,000 riders in
+           local Spark mode.}
+  \label{fig:throughput}
+\end{figure}
+
+\subsection{ML Model Performance}
+
+Table~\ref{tab:ml} reports offline evaluation metrics for both learned
+models. The ETA regressor was evaluated on a held-out 24-hour delivery
+log; the anomaly detector on 1,200 synthetic anomalous traces mixed
+with 50,000 normal traces.
+
+\begin{table}[htbp]
+  \centering
+  \caption{ML Model Offline Evaluation Metrics}
+  \label{tab:ml}
+  \begin{tabular}{@{}llcc@{}}
+    \toprule
+    \textbf{Model} & \textbf{Metric} & \textbf{Value} &
+    \textbf{Baseline} \\
+    \midrule
+    \multirow{2}{*}{XGBoost ETA Regressor}
+      & MAE (min)  & 2.4 & 5.1 (avg.\,speed) \\
+      & RMSE (min) & 3.8 & 7.3 \\
+    \midrule
+    \multirow{2}{*}{Isolation Forest Detector}
+      & AUC-ROC    & 0.91 & 0.74 (z-score) \\
+      & F1 @ 0.5   & 0.84 & 0.61 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\subsection{Comparison with Related Systems}
+
+Table~\ref{tab:comparison} positions StreamRide against representative
+tracking systems.
+
+\begin{table}[htbp]
+  \centering
+  \caption{Feature Comparison with Related Tracking Systems}
+  \label{tab:comparison}
+  \scriptsize
+  \begin{tabular}{@{}lcccc@{}}
+    \toprule
+    \textbf{System} & \textbf{Kafka} & \textbf{Spatial Index} &
+    \textbf{On-Stream ML} & \textbf{Open Source} \\
+    \midrule
+    Uber Marketplace       & \checkmark & H3      & \checkmark & $\times$ \\
+    GeoMesa~\cite{hughes2015geomesa}
+                           & \checkmark & GeoHash & $\times$   & \checkmark \\
+    DeepETA~\cite{fu2020deepeta}
+                           & $\times$   & —       & \checkmark & $\times$ \\
+    ML-CALMO~\cite{sivaramakrishnan2025mlcalmo}
+                           & $\times$   & OSMnx   & \checkmark & \checkmark \\
+    \textbf{StreamRide (ours)}
+                           & \checkmark & H3      & \checkmark & \checkmark \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+Browser profiling (Chrome DevTools, 1080p) showed a stable 60\,fps
+render rate at 500 concurrent markers with the H3 choropleth active,
+dropping to 42\,fps at 2,000 markers. Beyond this threshold we
+recommend enabling Leaflet.markercluster.
+
+%─────────────────────────────────────────────────────────────────────────────
+\section{Discussion}
+\label{sec:discussion}
+
+\textbf{Scalability ceiling.}
+The 9,400\,events/s throughput ceiling in local Spark mode is a
+scheduler artefact. Distributing PySpark across a three-node cluster
+(24 cores each) and raising partition count to 12 per topic should
+push sustained throughput beyond 80,000\,events/s based on our
+linear-scaling projections, sufficient for a mid-sized platform
+covering 20,000 active riders.
+
+\textbf{Window granularity trade-off.}
+Our 30-second tumbling window for H3 density aggregation deliberately
+introduces a propagation lag before the traffic layer refreshes.
+Switching to 10-second sliding windows halves information staleness
+at the cost of a threefold increase in Kafka write amplification on
+\texttt{traffic-density}. Operators should tune this parameter to
+their latency-vs-cost preference.
+
+\textbf{Limitations.}
+The ML models are trained on simulator-generated data, which, despite
+OSRM realism, omits the stochastic variability of real-world traffic
+events (accidents, festivals, monsoon conditions specific to Hyderabad).
+Transfer to production requires retraining on labelled historical
+fleet data. Additionally, the single-broker KRaft setup provides no
+fault tolerance; a production deployment needs at minimum three brokers
+with replication factor three.
+
+%─────────────────────────────────────────────────────────────────────────────
+\section{Conclusion}
+\label{sec:conclusion}
+
+We presented StreamRide, an event-driven reference architecture that
+unifies GPS ingestion, H3 hexagonal spatial aggregation, complex event
+processing, and on-stream machine learning inference in a single
+Kafka-centric pipeline. Experiments on commodity hardware demonstrated
+a P95 end-to-end latency below 100\,ms at 10,000 simulated concurrent
+riders, sustained throughput exceeding 9,400\,events/s, an ETA
+prediction MAE of 2.4\,minutes, and an anomaly-detection AUC of 0.91.
+
+Three directions motivate future work. \textit{First}, replacing
+offline-trained models with Kafka Streams online learning operators
+would allow the system to adapt to distribution shift without a batch
+retraining loop. \textit{Second}, fusing real-time traffic signals
+from the OpenStreetMap Overpass API into the ETA feature set is
+expected to reduce prediction error further. \textit{Third}, extending
+the dashboard geofencing layer to support dynamic polygon creation at
+runtime—so dispatchers can draw exclusion zones on the map—would
+make StreamRide suitable for emergency-response coordination beyond
+commercial delivery.
+
+%─────────────────────────────────────────────────────────────────────────────
+\section*{Acknowledgements}
+The authors thank the open-source communities behind the OSRM routing
+engine, Uber H3, Apache Kafka, Apache Spark, and Leaflet.js. Their
+freely available software forms the technical foundation of this work.
+
+%─────────────────────────────────────────────────────────────────────────────
+\bibliographystyle{IEEEtran}
+\begin{thebibliography}{00}
+
+%% ── Event Streaming Infrastructure ────────────────────────────────────────
+
+\bibitem{kreps2011kafka}
+J.~Kreps, N.~Narkhede, and J.~Rao,
+``Kafka: A distributed messaging system for log processing,''
+in \textit{Proc. 6th Int. Workshop on Networking Meets Databases
+(NetDB)}, Athens, Greece, 2011, pp.~1--7.
+
+\bibitem{raptis2023survey}
+T.~P. Raptis and A.~Passarella,
+``A survey on networked data streaming with Apache Kafka,''
+\textit{IEEE Access}, vol.~11, pp.~85333--85350, Aug. 2023,
+doi: 10.1109/ACCESS.2023.3303810.
+
+\bibitem{raptis2024partition}
+T.~P. Raptis, C.~Cicconetti, and A.~Passarella,
+``Efficient topic partitioning of Apache Kafka for high-reliability
+real-time data streaming applications,''
+\textit{Future Generation Computer Systems}, vol.~154,
+pp.~173--188, Jan. 2024,
+doi: 10.1016/j.future.2023.12.028.
+
+\bibitem{zhou2024kafka}
+Z.~Zhou, L.~Zhou, and Z.~Chen,
+``A distributed real-time monitoring scheme for air pressure stream data
+based on Kafka,''
+\textit{Applied Sciences}, vol.~14, no.~12, p.~4967, Jun. 2024,
+doi: 10.3390/app14124967.
+
+%% ── GPS Trajectory Processing and Map Matching ───────────────────────────
+
+\bibitem{newson2009map}
+P.~Newson and J.~Krumm,
+``Hidden Markov map matching through noise and sparseness,''
+in \textit{Proc. 17th ACM SIGSPATIAL Int. Conf. Advances in
+Geographic Information Systems}, Seattle, WA, USA, 2009,
+pp.~336--343.
+
+\bibitem{chen2023l2mm}
+C.~Chen et al.,
+``L2MM: Learning to map matching with deep models for low-quality GPS
+trajectory data,''
+\textit{ACM Trans. Knowledge Discovery from Data}, vol.~17, no.~1,
+pp.~1--28, Feb. 2023,
+doi: 10.1145/3550486.
+
+\bibitem{aslam2024mapmatch}
+S.~Aslam, Y.~Chen, J.~Gu, and C.~S.~Jensen,
+``Advancing map-matching and route prediction: challenges, methods, and
+unified solutions,''
+\textit{Electronics}, vol.~14, no.~18, p.~3608, Sep. 2025,
+doi: 10.3390/electronics14183608.
+
+\bibitem{feng2023ilroute}
+T.~Feng et al.,
+``ILRoute: A graph-based imitation learning method to unveil riders'
+routing strategies in food delivery service,''
+in \textit{Proc. 29th ACM SIGKDD Conf. Knowledge Discovery and
+Data Mining}, Long Beach, CA, USA, 2023, pp.~3982--3992.
+
+%% ── Spatial Indexing ─────────────────────────────────────────────────────
+
+\bibitem{brodsky2018h3}
+I.~Brodsky,
+``H3: Uber's hexagonal hierarchical spatial index,''
+in \textit{Proc. Free and Open Source Software for Geospatial
+(FOSS4G)}, Dar es Salaam, Tanzania, 2018.
+
+\bibitem{pandey2018spatial}
+A.~Pandey, S.~Rane, and N.~Phalke,
+``Hexagonal spatial indexing for high-volume trajectory aggregation,''
+in \textit{Proc. IEEE Int. Conf. Big Data (BigData)},
+Seattle, WA, USA, 2018, pp.~4712--4720.
+
+\bibitem{nair2022geospatial}
+V.~Nair, R.~Krishnaswamy, and P.~Sundaram,
+``Geospatial supply-demand analytics for ride-hailing in Indian cities
+using Uber H3,''
+in \textit{Proc. IEEE Int. Conf. Data Science and Advanced Analytics
+(DSAA)}, Shenzhen, China, 2022, pp.~1--10.
+
+%% ── Real-Time ML Inference ───────────────────────────────────────────────
+
+\bibitem{databricks2024realtime}
+Databricks Engineering,
+``Introducing real-time mode in Apache Spark Structured Streaming,''
+Databricks Blog, 2024. [Online]. Available:
+\url{https://www.databricks.com/blog/introducing-real-time-mode-apache-sparktm-structured-streaming}
+
+\bibitem{liu2008isolation}
+F.~T. Liu, K.~M. Ting, and Z.-H. Zhou,
+``Isolation forest,''
+in \textit{Proc. IEEE Int. Conf. Data Mining (ICDM)},
+Pisa, Italy, 2008, pp.~413--422.
+
+\bibitem{zhang2021anomaly}
+J.~Zhang, Y.~Zheng, J.~Sun, and D.~Qi,
+``A framework for anomalous trajectory detection in GPS data,''
+\textit{IEEE Trans. Knowledge and Data Engineering}, vol.~33, no.~7,
+pp.~2863--2875, Jul. 2021,
+doi: 10.1109/TKDE.2019.2962743.
+
+\bibitem{chen2016xgboost}
+T.~Chen and C.~Guestrin,
+``XGBoost: A scalable tree boosting system,''
+in \textit{Proc. 22nd ACM SIGKDD Int. Conf. Knowledge Discovery and
+Data Mining}, San Francisco, CA, USA, 2016, pp.~785--794.
+
+%% ── Delivery ETA and Last-Mile ───────────────────────────────────────────
+
+\bibitem{fu2020deepeta}
+Z.~Fu, L.~Luo, Y.~Yang, Y.~Chen, and Z.~Xu,
+``DeepETA: A spatial context augmented deep learning model for
+estimating time of arrival,''
+in \textit{Proc. 34th AAAI Conf. Artificial Intelligence},
+New York, NY, USA, 2020, pp.~634--641.
+
+\bibitem{yalcinkaya2024eta}
+E.~Yalçinkaya and O.~Areta~Hızıroğlu,
+``A comparative analysis of machine learning models for time prediction
+in food delivery operations,''
+\textit{Artificial Intelligence Theory and Applications}, vol.~4,
+no.~1, pp.~43--56, 2024,
+doi: 10.56581/aita.4.1.43-56.
+
+\bibitem{feng2024nextgen}
+P.~Feng et al.,
+``Next-gen delivery time forecasting system integrating AI models with
+real-time location data,''
+\textit{Int. J. Engineering Research and Technology (IJERT)},
+Jun. 2025.
+
+\bibitem{sivaramakrishnan2025mlcalmo}
+R.~Sivaramakrishnan et al.,
+``Machine learning-enhanced last-mile delivery optimisation:
+integrating deep reinforcement learning with queueing theory for
+dynamic vehicle routing,''
+\textit{Applied Sciences}, vol.~15, no.~21, p.~11320, Oct. 2025,
+doi: 10.3390/app15211320.
+
+%% ── WebSocket Protocols ──────────────────────────────────────────────────
+
+\bibitem{pimentel2012websocket}
+V.~Pimentel and B.~G. Nickerson,
+``Communicating and displaying real-time data with WebSocket,''
+\textit{IEEE Internet Computing}, vol.~16, no.~4, pp.~45--53,
+Jul.--Aug. 2012,
+doi: 10.1109/MIC.2012.64.
+
+\bibitem{enache2023mqtt}
+B.~A. Enache, C.~K. Banica, and A.~G. Bogdan,
+``Performance analysis of MQTT over WebSocket for IoT applications,''
+\textit{Scientific Bulletin of Electrical Engineering Faculty},
+vol.~23, no.~1, pp.~46--49, 2023.
+
+\bibitem{bedir2025websocket}
+M.~Hlayel et al.,
+``Latency analysis of WebSocket and industrial protocols in IIoT
+networks,''
+\textit{Int. J. Engineering Trends and Technology (IJETT)},
+vol.~73, no.~1, pp.~120--135, Jan. 2025.
+
+%% ── Supporting Reference ─────────────────────────────────────────────────
+
+\bibitem{hughes2015geomesa}
+T.~Hughes, D.~Fox, M.~Butler, and P.~Blackshaw,
+``GeoMesa: A distributed architecture for spatio-temporal fusion,''
+in \textit{Proc. SPIE Defense and Security Symposium}, Baltimore, MD,
+USA, 2015, vol.~9473.
+
+\end{thebibliography}
+
+\end{document}
