@@ -331,20 +331,20 @@ io.on('connection', (socket) => {
   });
 
   socket.on('book-ride', (data) => {
-    const { customer_name, lat, lng, riderType } = data;
-    
+    const { customer_name, lat, lng, destLat, destLng, riderType } = data;
+
     const closestRider = findClosestRider(lat, lng, riderType);
-    
+
     if (!closestRider) {
       socket.emit('book-ride-error', { error: 'No matching riders available for the selected type' });
       return;
     }
-    
+
     // Broadcast ride request to that specific rider room
     io.to(`rider:${closestRider.rider_id}`).emit('ride-request', {
       customer_name,
       customer_location: { lat, lng },
-      timestamp: Date.now()
+      destination: { lat: destLat, lng: destLng },
     });
     
     socket.emit('book-ride-response', { 

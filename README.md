@@ -183,4 +183,4 @@ To track a real mobile phone on 4G/5G and view the live dashboard from anywhere,
 1. Start your `server.js` and your Ngrok tunnel on your laptop.
 2. Open your Vercel deployment URL on your smartphone (e.g., `https://kafka-delivery-tracking.vercel.app/mobile-tracker.html`).
 3. Enter your assigned `Rider ID` and press **Start Tracking Me**.
-4. Open the map dashboard (`index.html` on Vercel) on your laptop or another device, and watch your real-world movements stream directly into your local Kafka broker!
+4. Open the map dashboard (`index.html` on Vercel) on your laptop or another device, and watch your real-world movements stream directly into your local Kafka broker..!

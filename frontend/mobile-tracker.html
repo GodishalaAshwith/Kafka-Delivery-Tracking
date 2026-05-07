@@ -57,6 +57,8 @@
         let lastLat = null;
         let lastLng = null;
         let currentCustomer = null;
+        let currentDestination = null;
+        let isEnrouteToDest = false;
 
         function initMap(lat, lng) {
             if (!map) {
@@ -77,15 +79,29 @@
 
         function updateRoute() {
             if (currentCustomer && lastLat && lastLng) {
+                const currentLatLng = L.latLng(lastLat, lastLng);
+                const customerLatLng = L.latLng(currentCustomer.lat, currentCustomer.lng);
+
+                // Switch to destination routing if within 50 meters of customer
+                if (!isEnrouteToDest && currentDestination && currentLatLng.distanceTo(customerLatLng) < 50) {
+                    isEnrouteToDest = true;
+                    document.getElementById('booking-alert').innerHTML = `<span style="color:green;">Customer picked up!</span> Heading to destination (shown in green).`;
+                    if (customerMarker) customerMarker.bindPopup("Customer (Picked up)").setPopupContent("Customer (Picked up)");
+                }
+
                 if (routeLine) {
                     map.removeLayer(routeLine);
                 }
+
+                const targetLat = isEnrouteToDest ? currentDestination.lat : currentCustomer.lat;
+                const targetLng = isEnrouteToDest ? currentDestination.lng : currentCustomer.lng;
+
                 routeLine = L.polyline([
                     [lastLat, lastLng],
-                    [currentCustomer.lat, currentCustomer.lng]
-                ], {color: 'red', weight: 4}).addTo(map);
+                    [targetLat, targetLng]
+                ], {color: isEnrouteToDest ? 'green' : 'red', weight: 4}).addTo(map);
 
-                const bounds = L.latLngBounds([lastLat, lastLng], [currentCustomer.lat, currentCustomer.lng]);
+                const bounds = L.latLngBounds([lastLat, lastLng], [targetLat, targetLng]);
                 map.fitBounds(bounds, { padding: [20, 20] });
             } else if (map && lastLat && lastLng) {
                 map.setView([lastLat, lastLng], 15);
@@ -125,8 +141,11 @@
         socket.on('ride-request', (data) => {
             document.getElementById('booking-alert').style.display = 'block';
             document.getElementById('booking-alert').innerHTML = `Ride Booked by ${data.customer_name}! Path shown in red.`;
-            
+
             currentCustomer = data.customer_location;
+            currentDestination = data.destination;
+            isEnrouteToDest = false;
+
             if (!customerMarker && map) {
                 customerMarker = L.marker([currentCustomer.lat, currentCustomer.lng]).addTo(map).bindPopup("Customer");
             } else if (customerMarker) {
@@ -195,6 +214,8 @@
             riderMarker = null;
             routeLine = null;
             currentCustomer = null;
+            currentDestination = null;
+            isEnrouteToDest = false;
             document.getElementById('booking-alert').style.display = 'none';
 
             if (watchId !== null) {

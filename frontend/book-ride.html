@@ -64,6 +64,11 @@
         let customerLng = null;
         let assignedRiderId = null;
 
+let destLat = null;
+        let destLng = null;
+        let destMarker = null;
+        let isEnrouteToDest = false;
+
         const socket = io(BACKEND_URL);
 
         // Get user location
@@ -71,26 +76,46 @@
             customerLat = pos.coords.latitude;
             customerLng = pos.coords.longitude;
             map.setView([customerLat, customerLng], 14);
-            
-            customerMarker = L.marker([customerLat, customerLng]).addTo(map)
-                .bindPopup("You are here").openPopup();
+
+            customerMarker = L.marker([customerLat, customerLng]).addTo(map)    
+                .bindPopup("You are here (Pickup)").openPopup();
         }, err => {
             document.getElementById('status').innerText = "Location access denied. Cannot book ride.";
         });
 
+        // Allow user to set destination via map click
+        map.on('click', function(e) {
+            if (assignedRiderId) return; // Prevent changing dest during ride
+
+            destLat = e.latlng.lat;
+            destLng = e.latlng.lng;
+            
+            if (!destMarker) {
+                // Using a green marker for destination just generic layer styling
+                destMarker = L.marker([destLat, destLng]).addTo(map).bindPopup("Destination Drop-off").openPopup();
+            } else {
+                destMarker.setLatLng([destLat, destLng]);
+            }
+            document.getElementById('status').innerText = "Destination set! You may now book a rider.";
+        });
+
         function bookRide() {
-            const name = document.getElementById('customerName').value.trim();
-            const riderType = document.getElementById('riderType').value;
+            const name = document.getElementById('customerName').value.trim();  
+            const riderType = document.getElementById('riderType').value;       
             if (!name) return alert("Please enter your name");
             if (!customerLat || !customerLng) return alert("Waiting for location...");
+            if (!destLat || !destLng) return alert("Please tap on the map to set a destination first!");
 
             document.getElementById('status').innerText = "Finding closest rider...";
             document.getElementById('bookBtn').disabled = true;
+            isEnrouteToDest = false;
 
             socket.emit('book-ride', {
                 customer_name: name,
                 lat: customerLat,
                 lng: customerLng,
+                destLat: destLat,
+                destLng: destLng,
                 riderType: riderType
             });
         }
@@ -134,18 +159,30 @@
             } else {
                 riderMarker.setLatLng([lat, lng]);
             }
+
+            const currentLatLng = L.latLng(lat, lng);
+            const customerLatLng = L.latLng(customerLat, customerLng);
+            const distToCustomer = currentLatLng.distanceTo(customerLatLng); // meters
             
+            if (!isEnrouteToDest && distToCustomer < 50 && destLat && destLng) {
+                isEnrouteToDest = true;
+                document.getElementById('status').innerText = "Rider has arrived! En route to destination.";
+            }
+
             if (routeLine) {
                 map.removeLayer(routeLine);
             }
-            
-            routeLine = L.polyline([
-                [customerLat, customerLng],
-                [lat, lng]
-            ], {color: 'blue', weight: 4}).addTo(map);
 
-            // Adjust bounds to fit both
-            const bounds = L.latLngBounds([customerLat, customerLng], [lat, lng]);
+            const targetLat = isEnrouteToDest ? destLat : customerLat;
+            const targetLng = isEnrouteToDest ? destLng : customerLng;
+
+            routeLine = L.polyline([
+                [lat, lng],
+                [targetLat, targetLng]
+            ], {color: isEnrouteToDest ? 'green' : 'blue', weight: 4}).addTo(map);
+
+            // Adjust bounds to fit rider and current target
+            const bounds = L.latLngBounds([lat, lng], [targetLat, targetLng]);
             map.fitBounds(bounds, { padding: [50, 50] });
         }
     </script>
